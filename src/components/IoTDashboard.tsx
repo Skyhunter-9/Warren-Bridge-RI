@@ -9,7 +9,7 @@ const mpsToMph = (mps: number) => parseFloat((mps * 2.23).toFixed(1));
 
 interface SensorSnapshot {
   timeString: string;
-  accelerometers: { x: number; y: number }[];
+  accelerometers: { x: number; y: number; z: number}[];
   strainGauges: number[];
   gnss: { Easting: number; Northing: number; Elevation: number }[];
   waterLevel: number[];
@@ -29,7 +29,7 @@ export const IoTDashboard: React.FC = () => {
 
       setData((prev) => [...prev, {
         timeString: timeStr,
-        accelerometers: Array.from({ length: 10 }, (_, i) => ({ x: mGToIn(Math.sin(t/1000+i)*15+5), y: mGToIn(Math.cos(t/800+i)*12+5) })),
+        accelerometers: Array.from({ length: 10 }, (_, i) => ({ x: mGToIn(Math.sin(t/1000+i)*15+5), y: mGToIn(Math.cos(t/800+i)*12+5), z: mGToIn(Math.sin(t / 1200 + i) * 10 + 2) })),
         strainGauges: Array.from({ length: 24 }, (_, i) => usToPsi(120 + Math.sin(t/3000+i)*8+2)),
         gnss: Array.from({ length: 6 }, (_, i) => ({ Easting: mmToIn(Math.sin(t/5000+i)*3), Northing: mmToIn(Math.cos(t/5000+i)*3), Elevation: mmToIn(Math.sin(t/10000+i)*5) })),
         waterLevel: [parseFloat((184.8 + Math.sin(t/20000)*6).toFixed(2)), parseFloat((184.8 + Math.cos(t/20000)*6).toFixed(2))],
@@ -43,7 +43,7 @@ export const IoTDashboard: React.FC = () => {
 
   const chartData = useMemo(() => data.map(d => {
     const flat: any = { time: d.timeString, waterVelocity: d.waterVelocity };
-    d.accelerometers.forEach((acc, i) => { flat[`acc_${i}_X`] = acc.x; flat[`acc_${i}_Y`] = acc.y; });
+    d.accelerometers.forEach((acc, i) => { flat[`acc_${i}_X`] = acc.x; flat[`acc_${i}_Y`] = acc.y; flat[`acc_${i}_Z`] = acc.z; });
     d.strainGauges.forEach((sg, i) => { flat[`sg_${i}`] = sg; });
     d.gnss.forEach((g, i) => { flat[`gnss_${i}_E`] = g.Easting; flat[`gnss_${i}_N`] = g.Northing; flat[`gnss_${i}_Z`] = g.Elevation; });
     flat.waterLevel_1 = d.waterLevel[0]; flat.waterLevel_2 = d.waterLevel[1];
@@ -94,12 +94,13 @@ export const IoTDashboard: React.FC = () => {
                 <LineChart data={chartData} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#edf2f7" />
                   <XAxis dataKey="time" stroke="#718096" style={{ fontSize: '9px' }} />
-                  <YAxis stroke="#718096" style={{ fontSize: '9px' }} />
+                  <YAxis stroke="#718096" style={{ fontSize: '9px' }} domain={['auto','auto']} />
                   <Tooltip contentStyle={{ fontSize: '11px' }} />
                   {Array.from({ length: 10 }).map((_, i) => (
                     <React.Fragment key={i}>
                       <Line name={`N${i+1}-X`} type="monotone" dataKey={`acc_${i}_X`} stroke={colors[i % colors.length]} strokeWidth={1} dot={false} isAnimationActive={false} />
                       <Line name={`N${i+1}-Y`} type="monotone" dataKey={`acc_${i}_Y`} stroke={colors[i % colors.length]} strokeWidth={1} strokeDasharray="2 2" dot={false} isAnimationActive={false} />
+                      <Line name={`N${i+1}-Z`} type="monotone" dataKey={`acc_${i}_Z`} stroke={colors[i % colors.length]} strokeWidth={1.5} strokeDasharray="1 1" dot={false} isAnimationActive={false} />
                     </React.Fragment>
                   ))}
                 </LineChart>
@@ -114,7 +115,7 @@ export const IoTDashboard: React.FC = () => {
                 <LineChart data={chartData} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#edf2f7" />
                   <XAxis dataKey="time" stroke="#718096" style={{ fontSize: '9px' }} />
-                  <YAxis stroke="#718096" style={{ fontSize: '9px' }} />
+                  <YAxis stroke="#718096" style={{ fontSize: '9px' }} domain={['auto','auto']} />
                   <Tooltip contentStyle={{ fontSize: '11px' }} />
                   {Array.from({ length: 24 }).map((_, i) => (
                     <Line key={i} name={`G${i+1}`} type="monotone" dataKey={`sg_${i}`} stroke={colors[i % colors.length]} strokeWidth={1} dot={false} isAnimationActive={false} />
@@ -131,7 +132,7 @@ export const IoTDashboard: React.FC = () => {
                 <LineChart data={chartData} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#edf2f7" />
                   <XAxis dataKey="time" stroke="#718096" style={{ fontSize: '9px' }} />
-                  <YAxis stroke="#718096" style={{ fontSize: '9px' }} />
+                  <YAxis stroke="#718096" style={{ fontSize: '9px' }} domain={['auto','auto']} />
                   <Tooltip contentStyle={{ fontSize: '11px' }} />
                   <Line name="Water Level 1" type="monotone" dataKey="waterLevel_1" stroke="#096dd9" dot={false} isAnimationActive={false} />
                   <Line name="Water Level 2" type="monotone" dataKey="waterLevel_2" stroke="#1890ff" strokeDasharray="3 3" dot={false} isAnimationActive={false} />
@@ -155,9 +156,10 @@ export const IoTDashboard: React.FC = () => {
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={chartData} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} /><Tooltip contentStyle={{ fontSize: '10px' }} />
+                      <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
                       <Line name="X-Axis" type="monotone" dataKey={`acc_${i}_X`} stroke="#ff4d4f" strokeWidth={1.5} dot={false} isAnimationActive={false} />
                       <Line name="Y-Axis" type="monotone" dataKey={`acc_${i}_Y`} stroke="#faad14" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+                      <Line name="Z-Axis" type="monotone" dataKey={`acc_${i}_Z`} stroke="#1890ff" strokeWidth={1.5} dot={false} isAnimationActive={false} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
@@ -171,7 +173,7 @@ export const IoTDashboard: React.FC = () => {
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={chartData} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} /><Tooltip contentStyle={{ fontSize: '10px' }} />
+                      <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
                       <Line name="Load" type="monotone" dataKey={`sg_${i}`} stroke="#1890ff" strokeWidth={1.5} dot={false} isAnimationActive={false} />
                     </LineChart>
                   </ResponsiveContainer>
@@ -186,7 +188,7 @@ export const IoTDashboard: React.FC = () => {
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={chartData} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} /><Tooltip contentStyle={{ fontSize: '10px' }} />
+                      <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
                       <Line name="E" type="monotone" dataKey={`gnss_${i}_E`} stroke="#52c41a" dot={false} isAnimationActive={false} />
                       <Line name="N" type="monotone" dataKey={`gnss_${i}_N`} stroke="#13c2c2" dot={false} isAnimationActive={false} />
                       <Line name="Z" type="monotone" dataKey={`gnss_${i}_Z`} stroke="#722ed1" dot={false} isAnimationActive={false} />
@@ -204,7 +206,7 @@ export const IoTDashboard: React.FC = () => {
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={chartData} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                        <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} /><Tooltip contentStyle={{ fontSize: '10px' }} />
+                        <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
                         <Line name="WL 1 (in)" type="monotone" dataKey="waterLevel_1" stroke="#096dd9" dot={false} isAnimationActive={false} />
                         <Line name="WL 2 (in)" type="monotone" dataKey="waterLevel_2" stroke="#1890ff" dot={false} isAnimationActive={false} />
                       </LineChart>
@@ -217,7 +219,7 @@ export const IoTDashboard: React.FC = () => {
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={chartData} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                        <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} /><Tooltip contentStyle={{ fontSize: '10px' }} />
+                        <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
                         <Line name="Velocity (mph)" type="monotone" dataKey="waterVelocity" stroke="#fa8c16" strokeWidth={2} dot={false} isAnimationActive={false} />
                       </LineChart>
                     </ResponsiveContainer>
@@ -229,7 +231,7 @@ export const IoTDashboard: React.FC = () => {
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={chartData} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                        <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} /><Tooltip contentStyle={{ fontSize: '10px' }} />
+                        <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
                         <Line name="Pier 1 Scour" type="monotone" dataKey="scour_1" stroke="#722ed1" dot={false} isAnimationActive={false} />
                         <Line name="Pier 2 Scour" type="monotone" dataKey="scour_2" stroke="#eb2f96" dot={false} isAnimationActive={false} />
                       </LineChart>
