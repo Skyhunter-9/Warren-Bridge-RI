@@ -1,45 +1,29 @@
 // src/components/IoTDashboard.tsx
+
 import React, { useEffect, useMemo, useState } from 'react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import SensorService, { SensorSnapshot } from '../Sensors/SensorService';
 
-const mGToIn = (mg: number) => parseFloat((mg * 0.386).toFixed(2));
-const usToPsi = (us: number) => parseFloat((us * 0.029).toFixed(2));
-const mmToIn = (mm: number) => parseFloat((mm * 0.039).toFixed(2));
-const mpsToMph = (mps: number) => parseFloat((mps * 2.23).toFixed(1));
 
-interface SensorSnapshot {
-  timeString: string;
-  accelerometers: { x: number; y: number; z: number}[];
-  strainGauges: number[];
-  gnss: { Easting: number; Northing: number; Elevation: number }[];
-  waterLevel: number[];
-  waterVelocity: number;
-  scour: number[];
-  weather: { temp: number; windSpeed: number; humidity: number };
-}
 export const IoTDashboard: React.FC = () => {
   const [data, setData] = useState<SensorSnapshot[]>([]);
   const [expandedSection, setExpandedSection] = useState<'none' | 'accel' | 'strain' | 'hydro' | 'gnss'>('none');
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      const now = new Date();
-      const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-      const t = now.getTime();
+    const interval = setInterval(async () => {
+      try {
+        const latestSnapshot = await SensorService.getLatestSnapshot();
+        setData((prev) => [...prev, latestSnapshot].slice(-15));
+          } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error("Dashboard failed to retrieve next telemetry node:", error);
+    }
 
-      setData((prev) => [...prev, {
-        timeString: timeStr,
-        accelerometers: Array.from({ length: 10 }, (_, i) => ({ x: mGToIn(Math.sin(t/1000+i)*15+5), y: mGToIn(Math.cos(t/800+i)*12+5), z: mGToIn(Math.sin(t / 1200 + i) * 10 + 2) })),
-        strainGauges: Array.from({ length: 24 }, (_, i) => usToPsi(120 + Math.sin(t/3000+i)*8+2)),
-        gnss: Array.from({ length: 6 }, (_, i) => ({ Easting: mmToIn(Math.sin(t/5000+i)*3), Northing: mmToIn(Math.cos(t/5000+i)*3), Elevation: mmToIn(Math.sin(t/10000+i)*5) })),
-        waterLevel: [parseFloat((184.8 + Math.sin(t/20000)*6).toFixed(2)), parseFloat((184.8 + Math.cos(t/20000)*6).toFixed(2))],
-        waterVelocity: mpsToMph(1.2 + Math.sin(t/4000)*0.3),
-        scour: [parseFloat((50.4 + Math.cos(t/15000)*2).toFixed(2)), parseFloat((50.4 + Math.sin(t/15000)*2).toFixed(2))],
-        weather: { temp: parseFloat((22*1.8+32 + Math.sin(t/60000)*3).toFixed(1)), windSpeed: mpsToMph(4.5), humidity: 55 }
-      }].slice(-15));
     }, 1000);
+
     return () => clearInterval(interval);
   }, []);
+
 
   const chartData = useMemo(() => data.map(d => {
     const flat: any = { time: d.timeString, waterVelocity: d.waterVelocity };
