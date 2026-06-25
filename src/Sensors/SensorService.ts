@@ -1,4 +1,4 @@
-// src/services/SensorService.ts
+// src/Sensors/SensorService.ts
 
 // 1. Define the full data structure interface
 export interface SensorSnapshot {
@@ -29,7 +29,7 @@ export class SensorService {
     return this.getMode() === 'REAL' ? this.fetchRealHardwareData() : this.generateSimulatedData();
   }
 
-  // 5. Encapsulated Simulation Logic (Preserving your exact math loops)
+  // 5. Encapsulated Simulation Logic (Preserving your exact math loops for learning)
   private static generateSimulatedData(): SensorSnapshot {
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
@@ -37,13 +37,13 @@ export class SensorService {
 
     return {
       timeString: timeStr,
-      accelerometers: Array. from({ length: 10 }, (_, i) => ({ 
+      accelerometers: Array.from({ length: 10 }, (_, i) => ({ 
         x: mGToIn(Math.sin(t / 1000 + i) * 15 + 5), 
         y: mGToIn(Math.cos(t / 800 + i) * 12 + 5), 
         z: mGToIn(Math.sin(t / 1200 + i) * 10 + 2) 
       })),
-      strainGauges: Array. from({ length: 24 }, (_, i) => usToPsi(120 + Math.sin(t / 3000 + i) * 8 + 2)),
-      gnss: Array. from({ length: 6 }, (_, i) => ({ 
+      strainGauges: Array.from({ length: 24 }, (_, i) => usToPsi(120 + Math.sin(t / 3000 + i) * 8 + 2)),
+      gnss: Array.from({ length: 6 }, (_, i) => ({ 
         Easting: mmToIn(Math.sin(t / 5000 + i) * 3), 
         Northing: mmToIn(Math.cos(t / 5000 + i) * 3), 
         Elevation: mmToIn(Math.sin(t / 10000 + i) * 5) 
@@ -65,21 +65,65 @@ export class SensorService {
     };
   }
 
-  // 6. Future Hardware API Placeholder
+  // 6. Upgraded Multi-Vendor Hardware API Ingestion (Replaced older single endpoint)
   private static async fetchRealHardwareData(): Promise<SensorSnapshot> {
-    try {
-      const apiEndpoint = import.meta.env.VITE_HARDWARE_API_URL || "http://localhost:5000/api";
-      const response = await fetch(`${apiEndpoint}/telemetry/latest`);
-      
-      if (!response.ok) throw new Error("Hardware endpoint unreachable");
-      return await response.json();
-      } catch (error) {
-    // eslint-disable-next-line no-console
-    console.warn("Hardware fetch failed, providing temporary fallback data:", error);
-    // Automatically uses your simulated data loop as a fallback if your server crashes
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 
+    const COMPANY_A_API = import.meta.env.VITE_COMPANY_A_URL || "http://structural-vendor.com";
+    const COMPANY_B_API = import.meta.env.VITE_COMPANY_B_URL || "http://hydro-vendor.net";
+    const WEATHER_GOV_API = "https://weather.gov";
+
+    try {
+      const [accelRes, strainRes, gnssRes, hydroRes, weatherRes] = await Promise.all([
+        fetch(`${COMPANY_A_API}/accelerometers`),
+        fetch(`${COMPANY_A_API}/strain-gauges`),
+        fetch(`${COMPANY_A_API}/gnss-positioning`),
+        fetch(`${COMPANY_B_API}/river-metrics`),
+        fetch(WEATHER_GOV_API)
+      ]);
+
+      const accelData = accelRes.ok ? await accelRes.json() : null;
+      const strainData = strainRes.ok ? await strainRes.json() : null;
+      const gnssData = gnssRes.ok ? await gnssRes.json() : null;
+      const hydroData = hydroRes.ok ? await hydroRes.json() : null;
+      const weatherData = weatherRes.ok ? await weatherRes.json() : null;
+
+      return {
+        timeString: timeStr,
+
+        accelerometers: accelData ? accelData.map((device: any) => ({
+          x: device.x,
+          y: device.y,
+          z: device.z
+        })) : Array(10).fill({ x: 0, y: 0, z: 0 }),
+
+        strainGauges: strainData ? Array.from({ length: 24 }, (_, i) => strainData[`SG_${String(i+1).padStart(2, '0')}`] || 0) 
+                                 : Array(24).fill(0),
+
+        gnss: gnssData ? gnssData.devices.map((g: any) => ({
+          Easting: g.easting,
+          Northing: g.northing,
+          Elevation: g.elevation
+        })) : Array(6).fill({ Easting: 0, Northing: 0, Elevation: 0 }),
+
+        waterLevel: hydroData ? [hydroData.upstreamSensor, hydroData.downstreamSensor] : [184.8, 184.8],
+        waterVelocity: hydroData ? hydroData.flowVelocityMph : 1.2,
+        scour: hydroData ? [hydroData.pier1ScourInches, hydroData.pier2ScourInches] : [50.4, 50.4],
+
+        weather: weatherData ? {
+          temp: parseFloat(weatherData.properties.temperature.value) || 72,
+          windSpeed: parseFloat(weatherData.properties.windSpeed.value) || 4.5,
+          humidity: parseFloat(weatherData.properties.relativeHumidity.value) || 55
+        } : { temp: 72, windSpeed: 4.5, humidity: 55 }
+      };
+
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn("One or more hardware APIs failed, falling back to simulated loops:", error);
       return this.generateSimulatedData();
     }
   }
 }
+
 export default SensorService;

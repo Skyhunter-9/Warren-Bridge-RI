@@ -19,7 +19,7 @@ export const IoTDashboard: React.FC = () => {
       console.error("Dashboard failed to retrieve next telemetry node:", error);
     }
 
-    }, 1000);
+    }, 1000); // Fetch new data every second
 
     return () => clearInterval(interval);
   }, []);
