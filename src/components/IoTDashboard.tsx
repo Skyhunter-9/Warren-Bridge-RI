@@ -1,8 +1,58 @@
 // src/components/IoTDashboard.tsx
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import SensorService, { SensorSnapshot } from '../Sensors/SensorService';
+
+// ============================================================================
+// 1. PASTE THE NEW SCROLL-LOCKED TOOLTIP COMPONENT RIGHT HERE:
+// ============================================================================
+const ScrollLockedTooltipContent: React.FC<any> = ({ active, payload, label }) => {
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const scrollPosRef = React.useRef<number>(0);
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    scrollPosRef.current = e.currentTarget.scrollTop;
+  };
+
+  React.useLayoutEffect(() => {
+    if (containerRef.current) {
+      containerRef.current.scrollTop = scrollPosRef.current;
+    }
+  });
+
+  if (!active || !payload) return null;
+
+  return (
+    <div 
+      ref={containerRef}
+      role="button"
+      tabIndex={0}
+      onScroll={handleScroll}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.key === 'Enter' && e.stopPropagation()}
+      style={{
+        fontSize: '11px',
+        backgroundColor: 'rgba(255, 255, 255, 0.65)',
+        backdropFilter: 'blur(14px)',
+        WebkitBackdropFilter: 'blur(14px)',
+        maxHeight: '200px',
+        overflowY: 'auto',
+        border: '1px solid rgba(255, 255, 255, 0.5)',
+        borderRadius: '8px',
+        boxShadow: '0 10px 40px rgba(0, 0, 0, 0.15)',
+        padding: '10px'
+      }}
+    >
+      <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>{label}</div>
+      {payload.map((item: any, index: number) => (
+        <div key={index} style={{ color: item.color, padding: '2px 0' }}>
+          {item.name}: {item.value}
+        </div>
+      ))}
+    </div>
+  );
+};
 
 
 export const IoTDashboard: React.FC = () => {
@@ -79,7 +129,11 @@ export const IoTDashboard: React.FC = () => {
                   <CartesianGrid strokeDasharray="3 3" stroke="#edf2f7" />
                   <XAxis dataKey="time" stroke="#718096" style={{ fontSize: '9px' }} />
                   <YAxis stroke="#718096" style={{ fontSize: '9px' }} domain={['auto','auto']} />
-                  <Tooltip contentStyle={{ fontSize: '11px' }} />
+                  <Tooltip 
+                    wrapperStyle={{ zIndex: 9999, pointerEvents: 'auto' }} 
+                    content={<ScrollLockedTooltipContent />} 
+                  />
+                  <Legend iconType="plainline" wrapperStyle={{ fontSize: '10px', paddingTop: '4px' }} />
                   {Array.from({ length: 10 }).map((_, i) => (
                     <React.Fragment key={i}>
                       <Line name={`N${i+1}-X`} type="monotone" dataKey={`acc_${i}_X`} stroke={colors[i % colors.length]} strokeWidth={1} dot={false} isAnimationActive={false} />
@@ -100,7 +154,11 @@ export const IoTDashboard: React.FC = () => {
                   <CartesianGrid strokeDasharray="3 3" stroke="#edf2f7" />
                   <XAxis dataKey="time" stroke="#718096" style={{ fontSize: '9px' }} />
                   <YAxis stroke="#718096" style={{ fontSize: '9px' }} domain={['auto','auto']} />
-                  <Tooltip contentStyle={{ fontSize: '11px' }} />
+                  <Tooltip 
+                    wrapperStyle={{ zIndex: 9999, pointerEvents: 'auto' }} 
+                    content={<ScrollLockedTooltipContent />} 
+                  />
+                  <Legend iconType="plainline" wrapperStyle={{ fontSize: '10px', paddingTop: '4px' }} />
                   {Array.from({ length: 24 }).map((_, i) => (
                     <Line key={i} name={`G${i+1}`} type="monotone" dataKey={`sg_${i}`} stroke={colors[i % colors.length]} strokeWidth={1} dot={false} isAnimationActive={false} />
                   ))}
@@ -117,7 +175,11 @@ export const IoTDashboard: React.FC = () => {
                   <CartesianGrid strokeDasharray="3 3" stroke="#edf2f7" />
                   <XAxis dataKey="time" stroke="#718096" style={{ fontSize: '9px' }} />
                   <YAxis stroke="#718096" style={{ fontSize: '9px' }} domain={['auto','auto']} />
-                  <Tooltip contentStyle={{ fontSize: '11px' }} />
+                  <Tooltip 
+                    wrapperStyle={{ zIndex: 9999, pointerEvents: 'auto' }} 
+                    content={<ScrollLockedTooltipContent />} 
+                  />
+                  <Legend iconType="plainline" wrapperStyle={{ fontSize: '10px', paddingTop: '4px' }} />
                   <Line name="Water Level 1" type="monotone" dataKey="waterLevel_1" stroke="#096dd9" dot={false} isAnimationActive={false} />
                   <Line name="Water Level 2" type="monotone" dataKey="waterLevel_2" stroke="#1890ff" strokeDasharray="3 3" dot={false} isAnimationActive={false} />
                   <Line name="Scour Pier 1" type="monotone" dataKey="scour_1" stroke="#722ed1" dot={false} isAnimationActive={false} />
