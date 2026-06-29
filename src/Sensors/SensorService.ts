@@ -29,6 +29,28 @@ export class SensorService {
     return this.getMode() === 'REAL' ? this.fetchRealHardwareData() : this.generateSimulatedData();
   }
 
+  // 4b. Unified Historical Data Fetcher
+  public static async getHistoricalData(timeframe: string): Promise<SensorSnapshot[]> {
+    if (this.getMode() === 'SIMULATED') {
+      // Simulation mode accumulates history locally in your dashboard, so return empty here
+      return []; 
+    }
+
+    const COMPANY_A_API = import.meta.env.VITE_COMPANY_A_URL || "http://structural-vendor.com";
+    try {
+      // Sends a request to your vendor API asking for logs within a specific time window
+      const response = await fetch(`${COMPANY_A_API}/historical-logs?window=${encodeURIComponent(timeframe)}`);
+      if (!response.ok) throw new Error("Historical endpoint returned an error status");
+      
+      const pastLogData = await response.json();
+      return pastLogData; // Assumes your real API returns an array of past logs
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn("Could not retrieve real-time historical data from hardware APIs:", error);
+      return [];
+    }
+  }
+
   // 5. Encapsulated Simulation Logic (Preserving your exact math loops for learning)
   private static generateSimulatedData(): SensorSnapshot {
     const now = new Date();
