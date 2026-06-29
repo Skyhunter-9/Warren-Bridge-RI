@@ -121,18 +121,28 @@ export const IoTDashboard: React.FC = () => {
 
       {expandedSection === 'none' ? (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px' }}>
-          <div role="button" tabIndex={0} onClick={() => setExpandedSection('accel')} onKeyDown={(e) => e.key === 'Enter' && setExpandedSection('accel')} style={{ background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0', cursor: 'pointer' }}>
-            <h4 style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#2d3748' }}>🔊 Accel Array (All 10 Nodes) <span style={{color:'#005A9C', fontSize:'11px'}}>🔍 Click to Explode</span></h4>
+          
+          {/* 1. ACCELEROMETER ARRAY CARD */}
+          <div style={{ background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+            <h4 style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#2d3748' }}>
+              🔊 Accel Array (All 10 Nodes){' '}
+              <span 
+                role="button"
+                tabIndex={0}
+                onClick={() => setExpandedSection('accel')} 
+                onKeyDown={(e) => e.key === 'Enter' && setExpandedSection('accel')}
+                style={{ color: '#005A9C', fontSize: '11px', cursor: 'pointer', marginLeft: '4px' }}
+              >
+                🔍 Click to Explode
+              </span>
+            </h4>
             <div style={{ width: '100%', height: '180px' }}>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#edf2f7" />
                   <XAxis dataKey="time" stroke="#718096" style={{ fontSize: '9px' }} />
                   <YAxis stroke="#718096" style={{ fontSize: '9px' }} domain={['auto','auto']} />
-                  <Tooltip 
-                    wrapperStyle={{ zIndex: 9999, pointerEvents: 'auto' }} 
-                    content={<ScrollLockedTooltipContent />} 
-                  />
+                  <Tooltip wrapperStyle={{ zIndex: 9999, pointerEvents: 'auto' }} content={<ScrollLockedTooltipContent />} />
                   <Legend iconType="plainline" wrapperStyle={{ fontSize: '10px', paddingTop: '4px' }} />
                   {Array.from({ length: 10 }).map((_, i) => (
                     <React.Fragment key={i}>
@@ -146,39 +156,57 @@ export const IoTDashboard: React.FC = () => {
             </div>
           </div>
 
-          <div role="button" tabIndex={0} onClick={() => setExpandedSection('strain')} onKeyDown={(e) => e.key === 'Enter' && setExpandedSection('strain')} style={{ background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0', cursor: 'pointer' }}>
-            <h4 style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#2d3748' }}>📐 Strain Gauge Matrix (All 24 Channels) <span style={{color:'#005A9C', fontSize:'11px'}}>🔍 Click to Explode</span></h4>
+          {/* 2. STRAIN GAUGE MATRIX CARD */}
+          <div style={{ background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+            <h4 style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#2d3748' }}>
+              📐 Strain Gauge Matrix (All 24 Channels){' '}
+              <span 
+                role="button"
+                tabIndex={0}
+                onClick={() => setExpandedSection('strain')} 
+                onKeyDown={(e) => e.key === 'Enter' && setExpandedSection('strain')}
+                style={{ color: '#005A9C', fontSize: '11px', cursor: 'pointer', marginLeft: '4px' }}
+              >
+                🔍 Click to Explode
+              </span>
+            </h4>
             <div style={{ width: '100%', height: '180px' }}>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#edf2f7" />
                   <XAxis dataKey="time" stroke="#718096" style={{ fontSize: '9px' }} />
                   <YAxis stroke="#718096" style={{ fontSize: '9px' }} domain={['auto','auto']} />
-                  <Tooltip 
-                    wrapperStyle={{ zIndex: 9999, pointerEvents: 'auto' }} 
-                    content={<ScrollLockedTooltipContent />} 
-                  />
+                  <Tooltip wrapperStyle={{ zIndex: 9999, pointerEvents: 'auto' }} content={<ScrollLockedTooltipContent />} />
                   <Legend iconType="plainline" wrapperStyle={{ fontSize: '10px', paddingTop: '4px' }} />
                   {Array.from({ length: 24 }).map((_, i) => (
-                    <Line key={i} name={`G${i+1}`} type="monotone" dataKey={`sg_${i}`} stroke={colors[i % colors.length]} strokeWidth={1} dot={false} isAnimationActive={false} />
+                    <Line key={i} name={`G${i+1}`} type="monotone" dataKey={`sg_${ i}`} stroke={colors[i % colors.length]} strokeWidth={1} dot={false} isAnimationActive={false} />
                   ))}
                 </LineChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          <div role="button" tabIndex={0} onClick={() => setExpandedSection('hydro')} onKeyDown={(e) => e.key === 'Enter' && setExpandedSection('hydro')} style={{ background: '#fff', padding: '12px', borderRadius: '6px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', cursor: 'pointer' }}>
-            <h4 style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#2d3748' }}>🌊 Hydrology Summary <span style={{color:'#005A9C', fontSize:'11px'}}>🔍 Click to Explode</span></h4>
+          {/* 3. HYDROLOGY SUMMARY CARD */}
+          <div style={{ background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+            <h4 style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#2d3748' }}>
+              🌊 Hydrology Summary {' '}
+              <span 
+                role="button"
+                tabIndex={0}
+                onClick={() => setExpandedSection('hydro')} 
+                onKeyDown={(e) => e.key === 'Enter' && setExpandedSection('hydro')}
+                style={{ color: '#005A9C', fontSize: '11px', cursor: 'pointer', marginLeft: '4px' }}
+              >
+                🔍 Click to Explode
+              </span>
+            </h4>
             <div style={{ width: '100%', height: '180px' }}>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#edf2f7" />
                   <XAxis dataKey="time" stroke="#718096" style={{ fontSize: '9px' }} />
                   <YAxis stroke="#718096" style={{ fontSize: '9px' }} domain={['auto','auto']} />
-                  <Tooltip 
-                    wrapperStyle={{ zIndex: 9999, pointerEvents: 'auto' }} 
-                    content={<ScrollLockedTooltipContent />} 
-                  />
+                  <Tooltip wrapperStyle={{ zIndex: 9999, pointerEvents: 'auto' }} content={<ScrollLockedTooltipContent />} />
                   <Legend iconType="plainline" wrapperStyle={{ fontSize: '10px', paddingTop: '4px' }} />
                   <Line name="Water Level 1" type="monotone" dataKey="waterLevel_1" stroke="#096dd9" dot={false} isAnimationActive={false} />
                   <Line name="Water Level 2" type="monotone" dataKey="waterLevel_2" stroke="#1890ff" strokeDasharray="3 3" dot={false} isAnimationActive={false} />
@@ -189,8 +217,10 @@ export const IoTDashboard: React.FC = () => {
               </ResponsiveContainer>
             </div>
           </div>
+
         </div>
       ) : (
+
         <div>
           <div style={{ marginBottom: '12px', fontWeight: 'bold', color: '#005A9C' }}>ℹ️ Exploded View Grid.</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
