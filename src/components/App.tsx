@@ -29,6 +29,10 @@ import { propertyGridUiProvider, treeWidgetUiProvider } from "./UiProviders";
 import { useAuthorizationContext } from "./Authorization";
 
 import { MyCustomUiProvider } from "./MyCustomUiProvider";
+import { Developer_Tab } from "./Developer_Tab";
+import { SensorInspectorTab } from "./SensorInspectorTab";
+
+import { startFineTuneCircleTest } from "./SensorCircleTest";
 
 
 interface AppProps {
@@ -46,6 +50,8 @@ export function App({ iTwinId, iModelId, changesetId }: AppProps) {
     await PropertyGridManager.initialize();
     await MeasureTools.startup();
     MeasurementActionToolbar.setDefaultActionProvider();
+
+    startFineTuneCircleTest();
   }, []);
 
     return (
@@ -74,7 +80,9 @@ export function App({ iTwinId, iModelId, changesetId }: AppProps) {
         new MeasureToolsUiItemsProvider(),
         treeWidgetUiProvider,
         propertyGridUiProvider,
-        new MyCustomUiProvider(), // <-- Add your new provider class here
+        new MyCustomUiProvider(),
+        new Developer_Tab(),
+        new SensorInspectorTab(), // <-- Add your new provider class here
       ]}
       selectionStorage={selectionStorage}
     />
