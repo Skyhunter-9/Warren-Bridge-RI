@@ -2,11 +2,14 @@
 //
 // Renders the "IoT Dashboard" tab: live-updating charts for accelerometers, strain gauges,
 // and hydrology, plus summary tiles for weather/hydro/GNSS. Data flow, top to bottom:
-//   1. A 1-second interval (below) calls SensorService.getLatestSnapshot() and appends
-//      the result to `data` state (capped at the last 5000 points).
+//   1. sensorDataStore.ts polls SensorService.getLatestSnapshot() once a second and keeps a
+//      shared, app-wide buffer (capped at the last 5000 points) - this component just
+//      mirrors that buffer into local state via onSnapshotsChanged, it doesn't poll itself.
+//      (The buffer is shared - not owned by this component - so a sensor marker's popup
+//      chart, SensorGraphPopup.tsx, still has live data even if this tab is never opened.)
 //   2. `chartData` (useMemo) flattens each SensorSnapshot into one flat object per point,
 //      because Recharts' <Line dataKey="..."> needs flat keys like `acc_0_X`, not nested
-//      arrays/objects.
+//      arrays/objects - via the same buildChartData() used by SensorGraphPopup.tsx.
 //   3. `getFilteredChartData(timeframe)` slices that flat array down to whatever time
 //      window the user picked in a chart's dropdown.
 // Edit SensorService.ts to change what data is generated/fetched; edit this file to change
@@ -14,7 +17,9 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import SensorService, { SensorSnapshot } from '../Sensors/SensorService';
+import SensorService from '../Sensors/SensorService';
+import { getSnapshots, onSnapshotsChanged, replaceSnapshots } from '../Sensors/sensorDataStore';
+import { buildChartData } from '../Sensors/chartData';
 
 // ============================================================================
 // 1. PASTE THE NEW SCROLL-LOCKED TOOLTIP COMPONENT RIGHT HERE:
@@ -110,8 +115,8 @@ const ChartTimeframeDropdown: React.FC<{
 
 
 export const IoTDashboard: React.FC = () => {
-  // `data` is the raw, ever-growing history of snapshots polled from SensorService.
-  const [data, setData] = useState<SensorSnapshot[]>([]);
+  // `data` mirrors the shared sensorDataStore buffer - see the onSnapshotsChanged effect below.
+  const [data, setData] = useState(() => getSnapshots());
   // 'none' = the overview grid (3 summary cards); any other value = the single-section
   // "exploded" per-node grid triggered by clicking "Click to Explode" on a card.
   const [expandedSection, setExpandedSection] = useState<'none' | 'accel' | 'strain' | 'hydro' | 'gnss'>('none');
@@ -158,22 +163,11 @@ export const IoTDashboard: React.FC = () => {
   };
 
 
-  // Core polling loop: grabs one new snapshot per second and appends it to `data`,
-  // trimming to the most recent 5000 points so memory doesn't grow unbounded over a long
-  // session. This runs in both SIMULATED and REAL mode - SensorService.getLatestSnapshot()
-  // decides internally which one to actually do.
+  // Mirrors the shared sensorDataStore buffer into local state whenever it changes (new poll,
+  // or a historical replace below) - the actual polling loop lives in sensorDataStore.ts, not
+  // here, so it keeps running even while this tab isn't mounted.
   useEffect(() => {
-    const interval = setInterval(async () => {
-      try {
-        const latestSnapshot = await SensorService.getLatestSnapshot();
-        setData((prev) => [...prev, latestSnapshot].slice(-5000));
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error("Dashboard failed to retrieve next telemetry node:", error);
-      }
-    }, 1000); // Fetch new data every second
-
-    return () => clearInterval(interval);
+    return onSnapshotsChanged.addListener(() => setData(getSnapshots()));
   }, []);
 
   // ======= Timeframe Trigger for real vs simulated data =======
@@ -194,7 +188,9 @@ export const IoTDashboard: React.FC = () => {
         try {
           const historicalLogs = await SensorService.getHistoricalData(accelTimeframe);
           if (historicalLogs && historicalLogs.length > 0) {
-            setData(historicalLogs);
+            // Goes through the shared store (not setData directly) so SensorGraphPopup and
+            // any other subscriber sees the same historical replacement.
+            replaceSnapshots(historicalLogs);
           }
         } catch (error) {
           // eslint-disable-next-line no-console
@@ -209,16 +205,9 @@ export const IoTDashboard: React.FC = () => {
   // Flattens each nested SensorSnapshot into one object per data point with keys like
   // `acc_3_Y` or `gnss_1_E`, matching the dataKey props used by the <Line> charts below.
   // Recomputed only when `data` changes (useMemo), since this runs once per new point but
-  // is read by every chart on every render.
-  const chartData = useMemo(() => data.map(d => {
-    const flat: any = { time: d.timeString, waterVelocity: d.waterVelocity };
-    d.accelerometers.forEach((acc, i) => { flat[`acc_${i}_X`] = acc.x; flat[`acc_${i}_Y`] = acc.y; flat[`acc_${i}_Z`] = acc.z; });
-    d.strainGauges.forEach((sg, i) => { flat[`sg_${i}`] = sg; });
-    d.gnss.forEach((g, i) => { flat[`gnss_${i}_E`] = g.Easting; flat[`gnss_${i}_N`] = g.Northing; flat[`gnss_${i}_Z`] = g.Elevation; });
-    flat.waterLevel_1 = d.waterLevel[0]; flat.waterLevel_2 = d.waterLevel[1];
-    flat.scour_1 = d.scour[0]; flat.scour_2 = d.scour[1];
-    return flat;
-  }), [data]);
+  // is read by every chart on every render. Shared with SensorGraphPopup.tsx so both read
+  // off the exact same field names.
+  const chartData = useMemo(() => buildChartData(data), [data]);
 
   const latest = data[data.length - 1];
   // Cycled through (via `colors[i % colors.length]`) to give each of the 10 accelerometer

@@ -5,67 +5,51 @@ import {
   IModelApp,
   IModelConnection,
 } from "@itwin/core-frontend";
-import { Point3d } from "@itwin/core-geometry";
-import { Placement3d, Placement3dProps } from "@itwin/core-common";
-import { ElementIconMarker, HARDCODED_SENSORS } from "./SensorIcons";
+import { ElementIconMarker, SENSOR_GROUPS } from "./SensorIcons";
+import { resolveSensorPosition } from "./resolveSensorPosition";
 
 // A "Decorator" is iTwin.js's mechanism for drawing custom graphics (things that aren't part
-// of the actual iModel geometry) into the 3D viewport every frame - here, the red sensor
+// of the actual iModel geometry) into the 3D viewport every frame - here, the colored sensor
 // icons. Registered once in App.tsx via `IModelApp.viewManager.addDecorator(sensorDecorator)`.
-
-// Must live under /public so it's served at this exact path in dev and prod builds.
-const SENSOR_ICON_URL = "/icons/sensor.svg";
 
 export class SensorDecorator implements Decorator {
   private markers: ElementIconMarker[] = [];
-  private image?: HTMLImageElement;
+  // Cached per icon URL so each sensor type's icon image is only fetched/decoded once,
+  // even though many sensors (e.g. 24 strain gauges) share the same icon.
+  private imagesByUrl = new Map<string, HTMLImageElement>();
 
-  // Looks up each Hex ID in HARDCODED_SENSORS (SensorIcons.ts), figures out its real-world
-  // position, and builds an ElementIconMarker for it. Called once from App.tsx after the
-  // first view opens - if you need markers to move/refresh live, call this again.
-  public async loadSensors(iModel: IModelConnection): Promise<void> {
-    if (!this.image) {
-      this.image = await imageElementFromUrl(SENSOR_ICON_URL);
+  private async getImage(iconUrl: string): Promise<HTMLImageElement> {
+    let image = this.imagesByUrl.get(iconUrl);
+    if (!image) {
+      image = await imageElementFromUrl(iconUrl);
+      this.imagesByUrl.set(iconUrl, image);
     }
+    return image;
+  }
 
+  // Walks every group in SENSOR_GROUPS (SensorIcons.ts) and every Hex ID within each group,
+  // resolving each one's real-world position and building a colored ElementIconMarker for
+  // it. Called once from App.tsx after the first view opens - if you need markers to
+  // move/refresh live, call this again.
+  public async loadSensors(iModel: IModelConnection): Promise<void> {
     const markers: ElementIconMarker[] = [];
 
-    for (const elementId of HARDCODED_SENSORS) {
-      try {
-        const propsArray = await iModel.elements.getProps(elementId);
-        if (!propsArray || propsArray.length === 0) continue;
+    for (const group of SENSOR_GROUPS) {
+      const image = await this.getImage(group.iconUrl);
 
-        const props = propsArray[0] as any;
-        const location = new Point3d(0, 0, 0);
-        let positionFound = false;
-
-        // placement.origin is only the local origin of the element's geometry stream, not
-        // necessarily near the visible geometry itself. Transforming the placement's own
-        // bbox by its origin/rotation (via calculateRange) gives the actual world-space box.
-        // This was the bug that made the marker render at world (0,0,z) instead of on the
-        // beam: this element's placement.origin sits at the model's local origin, with the
-        // real geometry offset from it - only the transformed bbox lands on the real beam.
-        if (props.placement?.bbox) {
-          const range = Placement3d.fromJSON(props.placement as Placement3dProps).calculateRange();
-          if (!range.isNull) {
-            // Center the marker over the element footprint, floating 1.5 world units above
-            // its highest point so the icon doesn't get buried inside the geometry.
-            location.set(range.center.x, range.center.y, range.high.z + 1.5);
-            positionFound = true;
+      // `nodeIndex` (position within this group's elementIds array) is what links a marker
+      // back to a specific chart series in SensorGraphPopup - see chartData.ts.
+      for (let nodeIndex = 0; nodeIndex < group.elementIds.length; nodeIndex++) {
+        const elementId = group.elementIds[nodeIndex];
+        try {
+          const location = await resolveSensorPosition(iModel, elementId);
+          if (location) {
+            markers.push(new ElementIconMarker(location, elementId, group.type, nodeIndex, image));
           }
-        } else if (props.placement?.origin) {
-          // Fallback for elements with no bbox at all (rare) - just use the raw origin.
-          // `?? 0` guards against 2D elements, whose origin has no z component.
-          location.set(props.placement.origin.x, props.placement.origin.y, (props.placement.origin.z ?? 0) + 1.5);
-          positionFound = true;
+        } catch (error) {
+          // eslint-disable-next-line no-console
+          console.error(`Failed to load ${group.label} sensor ${elementId}:`, error);
         }
-
-        if (positionFound) {
-          markers.push(new ElementIconMarker(location, elementId, this.image));
-        }
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error(`Failed to load sensor ${elementId}:`, error);
       }
     }
 

@@ -5,7 +5,7 @@ import { IModelApp, NotifyMessageDetails, OutputMessagePriority } from "@itwin/c
 // Renders the "Developer Tab" side panel: a toggleable "Hex ID Inspector" that watches
 // whatever element you click in the 3D view and copies its Hex ID to the clipboard. This is
 // the fastest way to find the real element ID for a new sensor to add to
-// HARDCODED_SENSORS (src/Sensors/SensorIcons.ts) - click the element in the viewport with
+// SENSOR_GROUPS (src/Sensors/SensorIcons.ts) - click the element in the viewport with
 // this active, then paste the copied ID into that array.
 const NewFeatureComponent = () => {
   const [isEnabled, setIsEnabled] = useState<boolean>(false);

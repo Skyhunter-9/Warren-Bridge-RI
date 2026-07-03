@@ -29,6 +29,7 @@ import { useAuthorizationContext } from "./Authorization";
 import { MyCustomUiProvider } from "./MyCustomUiProvider";
 import { Developer_Tab } from "./Developer_Tab";
 import { sensorDecorator } from "../Sensors/SensorDecorator";
+import { SensorGraphPopup } from "./SensorGraphPopup";
 
 interface AppProps {
   iTwinId: string;
@@ -64,43 +65,48 @@ export function App({ iTwinId, iModelId, changesetId }: AppProps) {
   }, []);
 
   return (
-    <Viewer
-      iTwinId={iTwinId}
-      iModelId={iModelId}
-      changeSetId={changesetId}
-      authClient={authClient}
-      viewCreatorOptions={viewCreatorOptions}
-      enablePerformanceMonitors={true}
-      onIModelAppInit={onIModelAppInit}
-      mapLayerOptions={{
-        BingMaps: {
-          key: "key",
-          value: import.meta.env.IMJS_BING_MAPS_KEY ?? "",
-        },
-      }}
-      uiProviders={[
-        // Built-in Bentley providers: navigation cube/tools, content toolbar, status bar,
-        // and the measure-tools toolbar. These come from @itwin packages, not this repo.
-        new ViewerNavigationToolsProvider(),
-        new ViewerContentToolsProvider({
-          vertical: {
-            measureGroup: false,
+    <>
+      <Viewer
+        iTwinId={iTwinId}
+        iModelId={iModelId}
+        changeSetId={changesetId}
+        authClient={authClient}
+        viewCreatorOptions={viewCreatorOptions}
+        enablePerformanceMonitors={true}
+        onIModelAppInit={onIModelAppInit}
+        mapLayerOptions={{
+          BingMaps: {
+            key: "key",
+            value: import.meta.env.IMJS_BING_MAPS_KEY ?? "",
           },
-        }),
-        new ViewerStatusbarItemsProvider(),
-        new MeasureToolsUiItemsProvider(),
-        // Model tree / categories tree and the element property grid (right-side panel
-        // seen when you click an element) - defined in UiProviders.tsx.
-        treeWidgetUiProvider,
-        propertyGridUiProvider,
-        // This project's custom tabs. Each is a small class implementing UiItemsProvider;
-        // add/remove entries here to add/remove a right-panel tab.
-        new MyCustomUiProvider(),   // "IoT Dashboard" tab (live sensor charts) - MyCustomUiProvider.tsx
-        new Developer_Tab(),        // "Developer Tab" - click-to-copy element Hex ID tool - Developer_Tab.tsx
-        new SensorInspectorTab(),   // "Sensors" tab - lists HARDCODED_SENSORS with resolved coordinates - SensorInspectorTab.tsx
-      ]}
-      selectionStorage={selectionStorage}
-    />
+        }}
+        uiProviders={[
+          // Built-in Bentley providers: navigation cube/tools, content toolbar, status bar,
+          // and the measure-tools toolbar. These come from @itwin packages, not this repo.
+          new ViewerNavigationToolsProvider(),
+          new ViewerContentToolsProvider({
+            vertical: {
+              measureGroup: false,
+            },
+          }),
+          new ViewerStatusbarItemsProvider(),
+          new MeasureToolsUiItemsProvider(),
+          // Model tree / categories tree and the element property grid (right-side panel
+          // seen when you click an element) - defined in UiProviders.tsx.
+          treeWidgetUiProvider,
+          propertyGridUiProvider,
+          // This project's custom tabs. Each is a small class implementing UiItemsProvider;
+          // add/remove entries here to add/remove a right-panel tab.
+          new MyCustomUiProvider(),   // "IoT Dashboard" tab (live sensor charts) - MyCustomUiProvider.tsx
+          new Developer_Tab(),        // "Developer Tab" - click-to-copy element Hex ID tool - Developer_Tab.tsx
+          new SensorInspectorTab(),   // "Sensors" tab - lists SENSOR_GROUPS with resolved coordinates - SensorInspectorTab.tsx
+        ]}
+        selectionStorage={selectionStorage}
+      />
+      {/* Sits outside the AppUI tab system entirely (see SensorGraphPopup.tsx) so a marker
+          click can pop up its chart no matter which side tab is currently open. */}
+      <SensorGraphPopup />
+    </>
   );
 }
 
