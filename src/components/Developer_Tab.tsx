@@ -2,6 +2,11 @@ import React, { useEffect, useState } from "react";
 import { StagePanelLocation, StagePanelSection, UiItemsProvider, Widget } from "@itwin/appui-react";
 import { IModelApp, NotifyMessageDetails, OutputMessagePriority } from "@itwin/core-frontend";
 
+// Renders the "Developer Tab" side panel: a toggleable "Hex ID Inspector" that watches
+// whatever element you click in the 3D view and copies its Hex ID to the clipboard. This is
+// the fastest way to find the real element ID for a new sensor to add to
+// HARDCODED_SENSORS (src/Sensors/SensorIcons.ts) - click the element in the viewport with
+// this active, then paste the copied ID into that array.
 const NewFeatureComponent = () => {
   const [isEnabled, setIsEnabled] = useState<boolean>(false);
   const [hexId, setHexId] = useState<string>("None");
@@ -42,8 +47,9 @@ const NewFeatureComponent = () => {
     return () => {
       removeListener();
     };
-  }, [isEnabled]);
+  }, [isEnabled]); // Re-subscribes whenever the toggle flips on/off.
 
+  // Flips the inspector on/off; resets the displayed Hex ID when turning it off.
   const toggleSelectionSpy = () => {
     setIsEnabled((prev) => !prev);
     if (!isEnabled) {

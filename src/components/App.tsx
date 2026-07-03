@@ -36,9 +36,16 @@ interface AppProps {
   changesetId?: string;
 }
 
+// The core 3D viewer screen. Wraps Bentley's <Viewer> component (which does all the heavy
+// lifting: loading the iModel, rendering the 3D scene, toolbars, etc.) and wires in this
+// project's custom widgets via `uiProviders`. To add a new side-panel tab, create a
+// UiItemsProvider class (see WidgetTemplate.tsx for a copy-paste starting point) and add
+// an instance of it to the `uiProviders` array below.
 export function App({ iTwinId, iModelId, changesetId }: AppProps) {
   const { client: authClient } = useAuthorizationContext();
 
+  // Runs once, after the underlying IModelApp (iTwin.js core) has finished starting up but
+  // before the viewport is shown. This is where any one-time startup/registration work goes.
   const onIModelAppInit = useCallback(async () => {
     // iModel now initialized
     await TreeWidget.initialize();
@@ -47,6 +54,9 @@ export function App({ iTwinId, iModelId, changesetId }: AppProps) {
     MeasurementActionToolbar.setDefaultActionProvider();
 
     // Register the sensor icon decorator, then load sensor markers once a view opens.
+    // `addDecorator` just registers the decorate() callback (see SensorDecorator.tsx) so it
+    // draws every frame; `onViewOpen.addOnce` waits until a viewport/iModel actually exists
+    // before we try to query element positions from it.
     IModelApp.viewManager.addDecorator(sensorDecorator);
     IModelApp.viewManager.onViewOpen.addOnce((viewport) => {
       void sensorDecorator.loadSensors(viewport.iModel);
@@ -69,6 +79,8 @@ export function App({ iTwinId, iModelId, changesetId }: AppProps) {
         },
       }}
       uiProviders={[
+        // Built-in Bentley providers: navigation cube/tools, content toolbar, status bar,
+        // and the measure-tools toolbar. These come from @itwin packages, not this repo.
         new ViewerNavigationToolsProvider(),
         new ViewerContentToolsProvider({
           vertical: {
@@ -77,11 +89,15 @@ export function App({ iTwinId, iModelId, changesetId }: AppProps) {
         }),
         new ViewerStatusbarItemsProvider(),
         new MeasureToolsUiItemsProvider(),
+        // Model tree / categories tree and the element property grid (right-side panel
+        // seen when you click an element) - defined in UiProviders.tsx.
         treeWidgetUiProvider,
         propertyGridUiProvider,
-        new MyCustomUiProvider(),
-        new Developer_Tab(),
-        new SensorInspectorTab(), // <-- Add your new provider class here
+        // This project's custom tabs. Each is a small class implementing UiItemsProvider;
+        // add/remove entries here to add/remove a right-panel tab.
+        new MyCustomUiProvider(),   // "IoT Dashboard" tab (live sensor charts) - MyCustomUiProvider.tsx
+        new Developer_Tab(),        // "Developer Tab" - click-to-copy element Hex ID tool - Developer_Tab.tsx
+        new SensorInspectorTab(),   // "Sensors" tab - lists HARDCODED_SENSORS with resolved coordinates - SensorInspectorTab.tsx
       ]}
       selectionStorage={selectionStorage}
     />
@@ -101,6 +117,7 @@ function viewConfiguration(viewPort: ScreenViewport) {
   const tileTreesLoaded = async () => {
     return new Promise((resolve, reject) => {
       const start = new Date();
+      // Poll every 100ms until all 3D tiles have streamed in, since there's no event for this.
       const intvl = setInterval(() => {
         if (viewPort.areAllTileTreesLoaded) {
           ViewerPerformance.addMark("TilesLoaded");
@@ -121,6 +138,8 @@ function viewConfiguration(viewPort: ScreenViewport) {
     });
   };
 
+  // Once tiles are in (or we gave up waiting), snap the camera to an isometric view that
+  // frames the whole model - this is why the bridge appears nicely centered on first load.
   void tileTreesLoaded().finally(() => {
     void IModelApp.tools.run(FitViewTool.toolId, viewPort, true, false);
     viewPort.view.setStandardRotation(StandardViewId.Iso);

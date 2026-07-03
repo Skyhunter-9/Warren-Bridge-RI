@@ -18,6 +18,10 @@ import { RootLayout } from "./RootLayout";
 import { ProgressLinear } from "@itwin/itwinui-react";
 import { App } from "./App";
 
+// Defines the two pages of this app:
+//   "/"               -> the actual iTwin viewer (indexRoute below)
+//   "/signin-callback" -> OIDC redirect target after Bentley login (signinRedirectRoute below)
+// RootLayout wraps every route with the theme provider, error boundary, and auth context.
 const rootRoute = createRootRoute({
   component: RootLayout,
 });
@@ -30,6 +34,9 @@ interface IndexSearchParams {
 
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
+  // Reads iTwinId/iModelId from the URL's query string (?iTwinId=...&iModelId=...),
+  // falling back to the .env defaults (IMJS_ITWIN_ID / IMJS_IMODEL_ID) if not present in the URL.
+  // This is what lets you open a *different* model just by editing the URL bar, as seen in your screenshots.
   validateSearch: (search: Record<string, unknown>): IndexSearchParams => {
     const iTwinId =
       (search.iTwinId as string | undefined) ?? import.meta.env.IMJS_ITWIN_ID;
@@ -54,6 +61,8 @@ const indexRoute = createRoute({
 
     return (
       <div className="viewer-container">
+        {/* Show a loading bar until BrowserAuthorizationClient (see Authorization.tsx) finishes
+            silent sign-in / redirect; only then do we mount the actual 3D viewer. */}
         {state === AuthorizationState.Pending ? (
           <div className="centered">
             <div className="signin-content">
@@ -72,6 +81,9 @@ const indexRoute = createRoute({
   },
 });
 
+// Bentley's OAuth server redirects the browser back to this path after login;
+// SignInRedirect (Authorization.tsx) just finishes the token exchange and the user
+// is bounced back to "/" once AuthorizationState flips to Authorized.
 const signinRedirectRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/signin-callback",
@@ -80,6 +92,7 @@ const signinRedirectRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([indexRoute, signinRedirectRoute]);
 
+// Exported and consumed by index.tsx's <RouterProvider>.
 export const router = createRouter({
   routeTree,
   defaultPreload: "intent",

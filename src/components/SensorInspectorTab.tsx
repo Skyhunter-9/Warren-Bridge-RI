@@ -1,7 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { IModelApp, IModelConnection } from "@itwin/core-frontend";
-import { Point3d, Range3d } from "@itwin/core-geometry";
+import { Point3d } from "@itwin/core-geometry";
+import { Placement3d, Placement3dProps } from "@itwin/core-common";
 import { HARDCODED_SENSORS } from "../Sensors/SensorIcons";
+
+// Renders the "Sensors" side tab ("Sensor Station Registry" panel in the screenshots).
+// This is a diagnostic/debug view: it independently re-resolves each HARDCODED_SENSORS Hex
+// ID's world coordinates (duplicating the position logic in SensorDecorator.tsx) so you can
+// see exactly where the app thinks each sensor is, and click one to fly the camera to it.
+// If you change the position-finding logic in SensorDecorator.tsx, mirror the change here too.
 
 interface ActiveSensorNode {
   hexId: string;
@@ -28,12 +35,17 @@ export const SensorInspectorComponent = () => {
           const location = new Point3d(0, 0, 0);
           let positionFound = false;
 
-          if (props.bbox) {
-            const range = Range3d.fromJSON(props.bbox);
-            location.set(range.center.x, range.center.y, range.high.z + 1.5);
-            positionFound = true;
+          // placement.origin is only the local origin of the element's geometry stream, not
+          // necessarily near the visible geometry itself. Transforming the placement's own
+          // bbox by its origin/rotation (via calculateRange) gives the actual world-space box.
+          if (props.placement?.bbox) {
+            const range = Placement3d.fromJSON(props.placement as Placement3dProps).calculateRange();
+            if (!range.isNull) {
+              location.set(range.center.x, range.center.y, range.high.z + 1.5);
+              positionFound = true;
+            }
           } else if (props.placement?.origin) {
-            location.set(props.placement.origin.x, props.placement.origin.y, props.placement.origin.z + 1.5);
+            location.set(props.placement.origin.x, props.placement.origin.y, (props.placement.origin.z ?? 0) + 1.5);
             positionFound = true;
           }
 
@@ -54,6 +66,8 @@ export const SensorInspectorComponent = () => {
       if (!disposed) setLoadedSensors(initializedNodes);
     };
 
+    // Handles both cases: the viewport may already be open by the time this tab mounts
+    // (use it immediately), or it may still be loading (wait for the one-time open event).
     const existingViewport = IModelApp.viewManager.selectedView;
     if (existingViewport?.iModel) {
       void loadSensorList(existingViewport.iModel);
@@ -68,6 +82,8 @@ export const SensorInspectorComponent = () => {
     };
   }, []);
 
+  // Clicking a sensor row selects that element (highlights it) and animates the camera to
+  // frame it - handy for confirming a Hex ID actually corresponds to the sensor you expect.
   const handleSelectFromList = async (id: string) => {
     const vp = IModelApp.viewManager.selectedView;
     if (vp) {

@@ -9,7 +9,11 @@ import { CategoriesTreeComponent, createTreeWidget, ModelsTreeComponent, } from 
 import { selectionStorage } from "../selectionStorage"; 
 import { SensorInspectorComponent } from "./SensorInspectorTab"; // Import the clean React view component
 
-export const treeWidgetUiProvider = { 
+// treeWidgetUiProvider: the left-side "Models"/"Categories" tree seen in the screenshots
+// (the panel with "Warren Bridge" > "Warren-6-17-26-iTwinV2" and the eye/visibility icons).
+// Built almost entirely from @itwin/tree-widget-react; not much to customize here beyond
+// which trees are included and selectionStorage wiring.
+export const treeWidgetUiProvider = {
   id: "TreeWidgetUIProvider", 
   getWidgets: () => [ 
     createTreeWidget({ 
@@ -33,7 +37,10 @@ export const treeWidgetUiProvider = {
   ], 
 }; 
 
-export const propertyGridUiProvider = { 
+// propertyGridUiProvider: the "Properties" panel that shows category/model/rotation/etc.
+// for whatever element is currently selected (see the "Geometry [2-HN]" panel in your
+// screenshots). Built from @itwin/property-grid-react.
+export const propertyGridUiProvider = {
   id: "PropertyGridUIProvider", 
   getWidgets: () => [ 
     createPropertyGrid({ 
@@ -53,8 +60,12 @@ export const propertyGridUiProvider = {
   ], 
 };
 
+// Thin UiItemsProvider wrapper around SensorInspectorComponent (the actual "Sensor Station
+// Registry" panel logic/markup lives in SensorInspectorTab.tsx). This class only exists to
+// satisfy the Viewer's `uiProviders` prop, which expects class instances with `id` +
+// `provideWidgets`, not bare React components.
 /** Adds the clean class provider wrapper here to safely bypass Vite HMR component export restrictions */
-export class SensorInspectorTab implements UiItemsProvider { 
+export class SensorInspectorTab implements UiItemsProvider {
   public readonly id = "SensorInspectorTab"; 
   
   public provideWidgets( 

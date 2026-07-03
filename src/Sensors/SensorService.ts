@@ -1,4 +1,12 @@
 // src/Sensors/SensorService.ts
+//
+// Data layer for the IoT Dashboard tab (IoTDashboard.tsx). Nothing here touches the 3D
+// viewer or iModel - it's a plain data source that either fabricates realistic-looking
+// telemetry (SIMULATED mode) or calls real vendor HTTP APIs (REAL mode), selected by the
+// VITE_SENSOR_MODE env var (see getMode() below). Edit here to add a new sensor type/field,
+// or to point REAL mode at different vendor endpoints.
+// NOTE: VITE_SENSOR_MODE / VITE_COMPANY_A_URL / VITE_COMPANY_B_URL are read via
+// import.meta.env but are not declared in vite-env.d.ts, so TypeScript treats them as `any`.
 
 // 1. Define the full data structure interface
 export interface SensorSnapshot {
@@ -20,20 +28,25 @@ const mpsToMph = (mps: number) => parseFloat((mps * 2.23).toFixed(1));
 
 export class SensorService {
   // 3. Mode Toggle
+  // Set VITE_SENSOR_MODE=REAL in .env to hit real vendor hardware instead of simulated data.
+  // Defaults to SIMULATED if unset, so the dashboard works out of the box with no hardware.
   private static getMode(): 'SIMULATED' | 'REAL' {
     return (import.meta.env.VITE_SENSOR_MODE as 'SIMULATED' | 'REAL') || 'SIMULATED';
   }
 
   // 4. Unified Data Fetcher
+  // Called once per second by IoTDashboard.tsx to get one new data point for all charts.
   public static async getLatestSnapshot(): Promise<SensorSnapshot> {
     return this.getMode() === 'REAL' ? this.fetchRealHardwareData() : this.generateSimulatedData();
   }
 
   // 4b. Unified Historical Data Fetcher
+  // Only meaningful in REAL mode - fetches a vendor's own logged history for a given
+  // timeframe (e.g. "last 24 Hours") so charts can show data older than this session.
   public static async getHistoricalData(timeframe: string): Promise<SensorSnapshot[]> {
     if (this.getMode() === 'SIMULATED') {
       // Simulation mode accumulates history locally in your dashboard, so return empty here
-      return []; 
+      return [];
     }
 
     const COMPANY_A_API = import.meta.env.VITE_COMPANY_A_URL || "http://structural-vendor.com";
@@ -52,6 +65,10 @@ export class SensorService {
   }
 
   // 5. Encapsulated Simulation Logic (Preserving your exact math loops for learning)
+  // Fabricates plausible-looking sensor values using sine/cosine waves seeded off the
+  // current timestamp (`t`), so every call produces smoothly-varying, non-repeating-looking
+  // data without needing any real sensors. Edit the amplitude/offset numbers here to change
+  // how "active" the simulated bridge looks.
   private static generateSimulatedData(): SensorSnapshot {
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
@@ -88,6 +105,12 @@ export class SensorService {
   }
 
   // 6. Upgraded Multi-Vendor Hardware API Ingestion (Replaced older single endpoint)
+  // Fires all 5 vendor requests in parallel (Promise.all), then falls back per-field to a
+  // hardcoded default if that specific vendor's response failed (`res.ok` check) so one dead
+  // API doesn't blank out the whole dashboard. If the whole batch throws (e.g. network down),
+  // the catch below falls all the way back to simulated data.
+  // Edit COMPANY_A_API / COMPANY_B_API (or add a new one) to point at your actual vendor URLs
+  // via the .env VITE_COMPANY_A_URL / VITE_COMPANY_B_URL variables.
   private static async fetchRealHardwareData(): Promise<SensorSnapshot> {
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });

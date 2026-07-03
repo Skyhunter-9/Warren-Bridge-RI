@@ -1,6 +1,12 @@
 // This file defines a custom tab or "widget" it is a template incase another is needed
 // Instructions for App.tsx import at bottom of file along with code to paste
-
+//
+// This is the pattern every other custom tab in this app follows (compare to
+// Developer_Tab.tsx, MyCustomUiProvider.tsx, SensorInspectorTab.tsx in src/components):
+// a plain React component with the actual UI, plus a small UiItemsProvider class that
+// tells the Viewer where to place it. To add a brand-new tab: copy this file, rename both
+// the component and the class, replace the JSX inside the component, then follow the
+// import/registration instructions at the bottom of this file to wire it into App.tsx.
 
 import React from "react";
 import { StagePanelLocation, StagePanelSection, UiItemsProvider, Widget } from "@itwin/appui-react";
@@ -27,7 +33,9 @@ export class WidgetTemplate implements UiItemsProvider {
   ): ReadonlyArray<Widget> {
     const widgets: Widget[] = [];
 
-    // Decides where on the screen the new tab settles (Right, Left, Top, Bottom)
+    // Decides where on the screen the new tab settles (Right, Left, Top, Bottom).
+    // All of this app's existing tabs use Right + Start, which is why they all stack
+    // together in the same right-side panel group you see in the running app.
     if (location === StagePanelLocation.Right && section === StagePanelSection.Start) {
       widgets.push({
         id: "my-template-tab-id",

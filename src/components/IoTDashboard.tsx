@@ -1,4 +1,16 @@
 // src/components/IoTDashboard.tsx
+//
+// Renders the "IoT Dashboard" tab: live-updating charts for accelerometers, strain gauges,
+// and hydrology, plus summary tiles for weather/hydro/GNSS. Data flow, top to bottom:
+//   1. A 1-second interval (below) calls SensorService.getLatestSnapshot() and appends
+//      the result to `data` state (capped at the last 5000 points).
+//   2. `chartData` (useMemo) flattens each SensorSnapshot into one flat object per point,
+//      because Recharts' <Line dataKey="..."> needs flat keys like `acc_0_X`, not nested
+//      arrays/objects.
+//   3. `getFilteredChartData(timeframe)` slices that flat array down to whatever time
+//      window the user picked in a chart's dropdown.
+// Edit SensorService.ts to change what data is generated/fetched; edit this file to change
+// how it's charted/laid out.
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -7,6 +19,10 @@ import SensorService, { SensorSnapshot } from '../Sensors/SensorService';
 // ============================================================================
 // 1. PASTE THE NEW SCROLL-LOCKED TOOLTIP COMPONENT RIGHT HERE:
 // ============================================================================
+// Recharts re-renders the tooltip content on every mousemove over the chart, which would
+// normally reset scrollTop to 0 on a scrollable tooltip (annoying if you're mid-scroll
+// through a 10+ line legend). This stashes scrollTop in a ref before each render and
+// restores it via useLayoutEffect right after, so scroll position survives the re-render.
 const ScrollLockedTooltipContent: React.FC<any> = ({ active, payload, label }) => {
   const containerRef = React.useRef<HTMLDivElement>(null);
   const scrollPosRef = React.useRef<number>(0);
@@ -54,9 +70,12 @@ const ScrollLockedTooltipContent: React.FC<any> = ({ active, payload, label }) =
   );
 };
 
-const ChartTimeframeDropdown: React.FC<{ 
-  value: string; 
-  onChange: (val: string) => void; 
+// The <select> dropdown pinned to the top-right corner of every chart card, letting the
+// user pick how much history that specific chart shows (each chart tracks its own
+// timeframe independently - see the accelTimeframe/strainTimeframe/etc. state below).
+const ChartTimeframeDropdown: React.FC<{
+  value: string;
+  onChange: (val: string) => void;
 }> = ({ value, onChange }) => {
   const timeframes = [
     'Real time', 'Last 5 Minutes', 'last 1 Hour', 'last 3 Hours', 
@@ -91,9 +110,12 @@ const ChartTimeframeDropdown: React.FC<{
 
 
 export const IoTDashboard: React.FC = () => {
+  // `data` is the raw, ever-growing history of snapshots polled from SensorService.
   const [data, setData] = useState<SensorSnapshot[]>([]);
+  // 'none' = the overview grid (3 summary cards); any other value = the single-section
+  // "exploded" per-node grid triggered by clicking "Click to Explode" on a card.
   const [expandedSection, setExpandedSection] = useState<'none' | 'accel' | 'strain' | 'hydro' | 'gnss'>('none');
-  
+
   // Track independent timeframes for each chart section
   const [accelTimeframe, setAccelTimeframe] = useState('Real time');
   const [strainTimeframe, setStrainTimeframe] = useState('Real time');
@@ -129,11 +151,18 @@ export const IoTDashboard: React.FC = () => {
     const secondsOfHistory = Math.floor((now - cutoffTime) / 1000);
 
     // Slices the array from the tail end based on required seconds of history
+    // NOTE: this assumes exactly one chartData point per second (true today, since the
+    // polling interval above is 1000ms) - if that interval ever changes, this slice count
+    // needs to scale with it too.
     return chartData.slice(-secondsOfHistory);
   };
 
 
-   useEffect(() => {
+  // Core polling loop: grabs one new snapshot per second and appends it to `data`,
+  // trimming to the most recent 5000 points so memory doesn't grow unbounded over a long
+  // session. This runs in both SIMULATED and REAL mode - SensorService.getLatestSnapshot()
+  // decides internally which one to actually do.
+  useEffect(() => {
     const interval = setInterval(async () => {
       try {
         const latestSnapshot = await SensorService.getLatestSnapshot();
@@ -148,11 +177,19 @@ export const IoTDashboard: React.FC = () => {
   }, []);
 
   // ======= Timeframe Trigger for real vs simulated data =======
+  // Only relevant in REAL mode: whenever any chart's timeframe dropdown changes, ask the
+  // vendor API for that historical window and replace `data` with it wholesale (simulated
+  // mode ignores this entirely since it has no server-side history to fetch - see
+  // SensorService.getHistoricalData()).
   useEffect(() => {
     const isRealHardware = import.meta.env.VITE_SENSOR_MODE === 'REAL';
-    
+
     if (isRealHardware) {
       // Define an internal async routine to keep the compiler happy
+      // NOTE: this always fetches using `accelTimeframe` specifically, even though the
+      // effect re-runs when any of the 6 timeframe dropdowns change. If you want each
+      // section's dropdown to independently control its own historical window, this would
+      // need to fetch/store history per-section rather than replacing all of `data` here.
       const fetchHistory = async () => {
         try {
           const historicalLogs = await SensorService.getHistoricalData(accelTimeframe);
@@ -169,6 +206,10 @@ export const IoTDashboard: React.FC = () => {
   }, [accelTimeframe, strainTimeframe, hydroTimeframe, gnssTimeframe, runoffTimeframe, scourTimeframe]);
 
 
+  // Flattens each nested SensorSnapshot into one object per data point with keys like
+  // `acc_3_Y` or `gnss_1_E`, matching the dataKey props used by the <Line> charts below.
+  // Recomputed only when `data` changes (useMemo), since this runs once per new point but
+  // is read by every chart on every render.
   const chartData = useMemo(() => data.map(d => {
     const flat: any = { time: d.timeString, waterVelocity: d.waterVelocity };
     d.accelerometers.forEach((acc, i) => { flat[`acc_${i}_X`] = acc.x; flat[`acc_${i}_Y`] = acc.y; flat[`acc_${i}_Z`] = acc.z; });
@@ -180,6 +221,8 @@ export const IoTDashboard: React.FC = () => {
   }), [data]);
 
   const latest = data[data.length - 1];
+  // Cycled through (via `colors[i % colors.length]`) to give each of the 10 accelerometer
+  // nodes / 24 strain gauges a distinct, repeatable line color.
   const colors = ['#ff4d4f', '#faad14', '#13c2c2', '#52c41a', '#1890ff', '#722ed1', '#eb2f96', '#2f54eb', '#fa8c16', '#a0d911'];
 
   return (
@@ -213,9 +256,12 @@ export const IoTDashboard: React.FC = () => {
         </div>
       )}
 
+      {/* Overview mode (expandedSection === 'none'): one combined chart per sensor
+          category, all 10/24/etc. nodes overlaid on the same axes. Clicking
+          "Click to Explode" on a card's heading switches to the per-node grid below instead. */}
       {expandedSection === 'none' ? (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px' }}>
-          
+
           {/* 1. ACCELEROMETER ARRAY CARD */}
           <div style={{ background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0', position: 'relative' }}>
             <h4 style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#2d3748' }}>
@@ -317,7 +363,9 @@ export const IoTDashboard: React.FC = () => {
 
         </div>
       ) : (
-
+        // Exploded mode: one small chart card per individual node (e.g. 10 separate
+        // accelerometer cards instead of 1 combined one), filtered to whichever
+        // `expandedSection` was clicked.
         <div>
           <div style={{ marginBottom: '12px', fontWeight: 'bold', color: '#005A9C' }}>ℹ️ Exploded View Grid.</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>

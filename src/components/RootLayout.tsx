@@ -11,6 +11,12 @@ import { ErrorBoundary } from "react-error-boundary";
 
 import { AuthorizationProvider } from "./Authorization";
 
+// Wraps every route (see Routes.tsx's rootRoute) with, from outside in:
+//   ThemeProvider        - iTwinUI light/dark theming for all child components
+//   ErrorBoundary         - catches render-time exceptions (e.g. missing iTwinId/iModelId)
+//                           and shows a friendly error screen instead of a blank page
+//   AuthorizationProvider - makes the OIDC auth client/state available via context
+// <Outlet /> is where TanStack Router renders the matched route's component (Index or SignInRedirect).
 export function RootLayout() {
   return (
     <ThemeProvider theme="light">
