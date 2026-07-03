@@ -1,8 +1,7 @@
 /*---------------------------------------------------------------------------------------------
- * Copyright (c) Bentley Systems, Incorporated. All rights reserved.
- * See LICENSE.md in the project root for license terms and full copyright notice.
- *--------------------------------------------------------------------------------------------*/
-
+* Copyright (c) Bentley Systems, Incorporated. All rights reserved.
+* See LICENSE.md in the project root for license terms and full copyright notice.
+*--------------------------------------------------------------------------------------------*/
 import {
   Viewer,
   ViewerContentToolsProvider,
@@ -26,13 +25,10 @@ import {
 } from "@itwin/measure-tools-react";
 import { selectionStorage } from "../selectionStorage";
 import { propertyGridUiProvider, SensorInspectorTab, treeWidgetUiProvider } from "./UiProviders";
-
 import { useAuthorizationContext } from "./Authorization";
-
 import { MyCustomUiProvider } from "./MyCustomUiProvider";
 import { Developer_Tab } from "./Developer_Tab";
-
-
+import { sensorDecorator } from "../Sensors/SensorDecorator";
 
 interface AppProps {
   iTwinId: string;
@@ -50,9 +46,14 @@ export function App({ iTwinId, iModelId, changesetId }: AppProps) {
     await MeasureTools.startup();
     MeasurementActionToolbar.setDefaultActionProvider();
 
+    // Register the sensor icon decorator, then load sensor markers once a view opens.
+    IModelApp.viewManager.addDecorator(sensorDecorator);
+    IModelApp.viewManager.onViewOpen.addOnce((viewport) => {
+      void sensorDecorator.loadSensors(viewport.iModel);
+    });
   }, []);
 
-    return (
+  return (
     <Viewer
       iTwinId={iTwinId}
       iModelId={iModelId}
