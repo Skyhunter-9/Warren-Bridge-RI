@@ -25,14 +25,13 @@ import {
   MeasureToolsUiItemsProvider,
 } from "@itwin/measure-tools-react";
 import { selectionStorage } from "../selectionStorage";
-import { propertyGridUiProvider, treeWidgetUiProvider } from "./UiProviders";
+import { propertyGridUiProvider, SensorInspectorTab, treeWidgetUiProvider } from "./UiProviders";
+
 import { useAuthorizationContext } from "./Authorization";
 
 import { MyCustomUiProvider } from "./MyCustomUiProvider";
 import { Developer_Tab } from "./Developer_Tab";
-import { SensorInspectorTab } from "./SensorInspectorTab";
 
-import { startFineTuneCircleTest } from "./SensorCircleTest";
 
 
 interface AppProps {
@@ -51,7 +50,6 @@ export function App({ iTwinId, iModelId, changesetId }: AppProps) {
     await MeasureTools.startup();
     MeasurementActionToolbar.setDefaultActionProvider();
 
-    startFineTuneCircleTest();
   }, []);
 
     return (
