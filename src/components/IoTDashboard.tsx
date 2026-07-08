@@ -211,7 +211,7 @@ export const IoTDashboard: React.FC = () => {
 
   const latest = data[data.length - 1];
   // Cycled through (via `colors[i % colors.length]`) to give each of the 10 accelerometer
-  // nodes / 24 strain gauges a distinct, repeatable line color.
+  // nodes / 9 strain gauges a distinct, repeatable line color.
   const colors = ['#ff4d4f', '#faad14', '#13c2c2', '#52c41a', '#1890ff', '#722ed1', '#eb2f96', '#2f54eb', '#fa8c16', '#a0d911'];
 
   return (
@@ -246,7 +246,7 @@ export const IoTDashboard: React.FC = () => {
       )}
 
       {/* Overview mode (expandedSection === 'none'): one combined chart per sensor
-          category, all 10/24/etc. nodes overlaid on the same axes. Clicking
+          category, all 10/9/etc. nodes overlaid on the same axes. Clicking
           "Click to Explode" on a card's heading switches to the per-node grid below instead. */}
       {expandedSection === 'none' ? (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px' }}>
@@ -289,7 +289,7 @@ export const IoTDashboard: React.FC = () => {
           {/* 2. STRAIN GAUGE MATRIX CARD */}
           <div style={{ background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0', position: 'relative' }}>
             <h4 style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#2d3748' }}>
-              📐 Strain Gauge Matrix (All 24 Channels){' '}
+              📐 Strain Gauge Matrix (All 9 Channels){' '}
               <span 
                 role="button"
                 tabIndex={0}
@@ -309,7 +309,7 @@ export const IoTDashboard: React.FC = () => {
                   <YAxis stroke="#718096" style={{ fontSize: '9px' }} domain={['auto','auto']} />
                   <Tooltip wrapperStyle={{ zIndex: 9999, pointerEvents: 'auto' }} content={<ScrollLockedTooltipContent />} />
                   <Legend iconType="plainline" wrapperStyle={{ fontSize: '10px', paddingTop: '4px' }} />
-                  {Array.from({ length: 24 }).map((_, i) => (
+                  {Array.from({ length: 9 }).map((_, i) => (
                     <Line key={i} name={`G${i+1}`} type="monotone" dataKey={`sg_${ i}`} stroke={colors[i % colors.length]} strokeWidth={1} dot={false} isAnimationActive={false} />
                   ))}
                 </LineChart>
@@ -377,7 +377,7 @@ export const IoTDashboard: React.FC = () => {
               </div>
             ))}
 
-            {expandedSection === 'strain' && Array.from({ length: 24 }).map((_, i) => (
+            {expandedSection === 'strain' && Array.from({ length: 9 }).map((_, i) => (
               <div key={i} style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
                 <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>📐 Gauge Channel {i + 1} (PSI)</h5>
                 <ChartTimeframeDropdown value={strainTimeframe} onChange={setStrainTimeframe} />

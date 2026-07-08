@@ -17,7 +17,7 @@ export interface SensorGroup {
   color: string;
   /** Icon drawn in the 3D view for every sensor in this group - must live under /public. */
   iconUrl: string;
-  /** How many physical sensors of this type actually exist (for "3/24 configured" style UI). */
+  /** How many physical sensors of this type actually exist (for "3/9 configured" style UI). */
   expectedCount: number;
   /**
    * Element Hex IDs linked to this sensor type, one per physical sensor. *** Edit this
@@ -51,7 +51,7 @@ export const SENSOR_GROUPS: SensorGroup[] = [
     label: "Strain Gauge",
     color: "#ffdd00",
     iconUrl: "/icons/sensor-yellow.svg",
-    expectedCount: 24,
+    expectedCount: 9,
     elementIds: [],
   },
   {

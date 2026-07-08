@@ -15,7 +15,7 @@ import { resolveSensorPosition } from "./resolveSensorPosition";
 export class SensorDecorator implements Decorator {
   private markers: ElementIconMarker[] = [];
   // Cached per icon URL so each sensor type's icon image is only fetched/decoded once,
-  // even though many sensors (e.g. 24 strain gauges) share the same icon.
+  // even though many sensors (e.g. 9 strain gauges) share the same icon.
   private imagesByUrl = new Map<string, HTMLImageElement>();
 
   private async getImage(iconUrl: string): Promise<HTMLImageElement> {

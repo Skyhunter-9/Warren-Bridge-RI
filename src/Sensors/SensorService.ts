@@ -81,7 +81,7 @@ export class SensorService {
         y: mGToIn(Math.cos(t / 800 + i) * 12 + 5), 
         z: mGToIn(Math.sin(t / 1200 + i) * 10 + 2) 
       })),
-      strainGauges: Array.from({ length: 24 }, (_, i) => usToPsi(120 + Math.sin(t / 3000 + i) * 8 + 2)),
+      strainGauges: Array.from({ length: 9 }, (_, i) => usToPsi(120 + Math.sin(t / 3000 + i) * 8 + 2)),
       gnss: Array.from({ length: 6 }, (_, i) => ({ 
         Easting: mmToIn(Math.sin(t / 5000 + i) * 3), 
         Northing: mmToIn(Math.cos(t / 5000 + i) * 3), 
@@ -143,8 +143,8 @@ export class SensorService {
           z: device.z
         })) : Array(10).fill({ x: 0, y: 0, z: 0 }),
 
-        strainGauges: strainData ? Array.from({ length: 24 }, (_, i) => strainData[`SG_${String(i+1).padStart(2, '0')}`] || 0) 
-                                 : Array(24).fill(0),
+        strainGauges: strainData ? Array.from({ length: 9 }, (_, i) => strainData[`SG_${String(i+1).padStart(2, '0')}`] || 0)
+                                 : Array(9).fill(0),
 
         gnss: gnssData ? gnssData.devices.map((g: any) => ({
           Easting: g.easting,
