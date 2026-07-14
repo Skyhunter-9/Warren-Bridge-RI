@@ -125,10 +125,10 @@ export const SENSOR_GROUPS: SensorGroup[] = [
     iconUrl: "/icons/sensor-orange.svg",
     expectedCount: 5,
     elementIds: [
-      { elementId: "0x20000000555", offset: { x: -1 } }, 
-      { elementId: "0x20000000547", offset: { x: -1 } }, 
-      { elementId: "0x2000000053b", offset: { x: -1 } }, 
-      { elementId: "0x2000000052f", offset: { x: -1 } }
+      { latitude: 41.737358, longitude: -71.289568 }, 
+      { latitude: 41.737380, longitude: -71.289328 }, 
+      { latitude: 41.737411, longitude: -71.289082 }, 
+      { latitude: 41.737438, longitude: -71.288842 }
     ],
   },
   {
