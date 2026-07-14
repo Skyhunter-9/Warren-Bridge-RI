@@ -2,8 +2,9 @@
 // Instructions for App.tsx import at bottom of file along with code to paste
 //
 // This is the pattern every other custom tab in this app follows (compare to
-// Developer_Tab.tsx, MyCustomUiProvider.tsx, SensorInspectorTab.tsx in src/components):
-// a plain React component with the actual UI, plus a small UiItemsProvider class that
+// src/components/Developer_Tab.tsx, src/components/MyCustomUiProvider.tsx, and
+// src/Sensors/SensorInspectorTab.tsx): a plain React component with the actual UI, plus a
+// small UiItemsProvider class that
 // tells the Viewer where to place it. To add a brand-new tab: copy this file, rename both
 // the component and the class, replace the JSX inside the component, then follow the
 // import/registration instructions at the bottom of this file to wire it into App.tsx.

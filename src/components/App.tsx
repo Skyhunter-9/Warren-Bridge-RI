@@ -29,7 +29,7 @@ import { useAuthorizationContext } from "./Authorization";
 import { MyCustomUiProvider } from "./MyCustomUiProvider";
 import { Developer_Tab } from "./Developer_Tab";
 import { sensorDecorator } from "../Sensors/SensorDecorator";
-import { SensorGraphPopup } from "./SensorGraphPopup";
+import { SensorGraphPopup } from "../Sensors/SensorGraphPopup";
 
 interface AppProps {
   iTwinId: string;
@@ -99,12 +99,12 @@ export function App({ iTwinId, iModelId, changesetId }: AppProps) {
           // add/remove entries here to add/remove a right-panel tab.
           new MyCustomUiProvider(),   // "IoT Dashboard" tab (live sensor charts) - MyCustomUiProvider.tsx
           new Developer_Tab(),        // "Developer Tab" - click-to-copy element Hex ID tool - Developer_Tab.tsx
-          new SensorInspectorTab(),   // "Sensors" tab - lists SENSOR_GROUPS with resolved coordinates - SensorInspectorTab.tsx
+          new SensorInspectorTab(),   // "Sensors" tab - lists SENSOR_GROUPS with resolved coordinates - Sensors/SensorInspectorTab.tsx
         ]}
         selectionStorage={selectionStorage}
       />
-      {/* Sits outside the AppUI tab system entirely (see SensorGraphPopup.tsx) so a marker
-          click can pop up its chart no matter which side tab is currently open. */}
+      {/* Sits outside the AppUI tab system entirely (see Sensors/SensorGraphPopup.tsx) so a
+          marker click can pop up its chart no matter which side tab is currently open. */}
       <SensorGraphPopup />
     </>
   );

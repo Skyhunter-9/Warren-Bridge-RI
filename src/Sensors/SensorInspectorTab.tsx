@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { IModelApp, IModelConnection } from "@itwin/core-frontend";
-import { SENSOR_GROUPS, SensorType } from "../Sensors/SensorIcons";
-import { resolveSensorPosition } from "../Sensors/resolveSensorPosition";
+import { SENSOR_GROUPS, SensorType } from "./SensorIcons";
+import { resolveSensorPosition } from "./resolveSensorPosition";
 
 // Renders the "Sensors" side tab ("Sensor Station Registry" panel in the screenshots).
 // This is a diagnostic/debug view: it independently re-resolves every SENSOR_GROUPS Hex ID's
@@ -103,7 +103,7 @@ export const SensorInspectorComponent = () => {
 
             {nodes.length === 0 ? (
               <div style={{ fontSize: "12px", opacity: 0.5, fontStyle: "italic", padding: "4px" }}>
-                No {group.label} sensors configured yet - add Hex IDs to the "{group.type}" entry in SensorIcons.ts.
+                No {group.label} sensors configured yet - add Hex IDs to the &quot;{group.type}&quot; entry in SensorIcons.ts.
               </div>
             ) : (
               <div style={{ maxHeight: "200px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "4px", background: "rgba(0,0,0,0.1)", borderRadius: "4px", padding: "4px" }}>

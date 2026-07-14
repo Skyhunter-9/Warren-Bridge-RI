@@ -36,15 +36,15 @@ export const SENSOR_GROUPS: SensorGroup[] = [
     color: "#ff8800",
     iconUrl: "/icons/sensor-orange.svg",
     expectedCount: 5,
-    elementIds: ["0x2000000055f"],
+    elementIds: ["0x20000000555", "0x20000000547", "0x2000000053b", "0x2000000052f"],
   },
   {
     type: "accelerometer",
-    label: "Accelerometer",
+    label: "Accelerometer/Geophone",
     color: "#ff2222",
     iconUrl: "/icons/sensor-red.svg",
     expectedCount: 10,
-    elementIds: [],
+    elementIds: ["0x2000000015c"],
   },
   {
     type: "strainGauge",

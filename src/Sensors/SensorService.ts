@@ -12,6 +12,10 @@
 export interface SensorSnapshot {
   timeString: string;
   accelerometers: { x: number; y: number; z: number }[];
+  // Triaxial, one geophone co-located with each accelerometer node (same count/order) - see
+  // chartData.ts's getSensorSeries(), which pairs the two by nodeIndex so clicking an
+  // accelerometer marker's popup shows both readings for that physical location.
+  geophones: { x: number; y: number; z: number }[];
   strainGauges: number[];
   gnss: { Easting: number; Northing: number; Elevation: number }[];
   waterLevel: number[];
@@ -76,10 +80,15 @@ export class SensorService {
 
     return {
       timeString: timeStr,
-      accelerometers: Array.from({ length: 10 }, (_, i) => ({ 
-        x: mGToIn(Math.sin(t / 1000 + i) * 15 + 5), 
-        y: mGToIn(Math.cos(t / 800 + i) * 12 + 5), 
-        z: mGToIn(Math.sin(t / 1200 + i) * 10 + 2) 
+      accelerometers: Array.from({ length: 10 }, (_, i) => ({
+        x: mGToIn(Math.sin(t / 1000 + i) * 15 + 5),
+        y: mGToIn(Math.cos(t / 800 + i) * 12 + 5),
+        z: mGToIn(Math.sin(t / 1200 + i) * 10 + 2)
+      })),
+      geophones: Array.from({ length: 10 }, (_, i) => ({
+        x: mmToIn(Math.sin(t / 900 + i) * 4 + 1),
+        y: mmToIn(Math.cos(t / 1100 + i) * 3 + 1),
+        z: mmToIn(Math.sin(t / 1300 + i) * 2 + 0.5)
       })),
       strainGauges: Array.from({ length: 9 }, (_, i) => usToPsi(120 + Math.sin(t / 3000 + i) * 8 + 2)),
       gnss: Array.from({ length: 6 }, (_, i) => ({ 
@@ -105,7 +114,7 @@ export class SensorService {
   }
 
   // 6. Upgraded Multi-Vendor Hardware API Ingestion (Replaced older single endpoint)
-  // Fires all 5 vendor requests in parallel (Promise.all), then falls back per-field to a
+  // Fires all 6 vendor requests in parallel (Promise.all), then falls back per-field to a
   // hardcoded default if that specific vendor's response failed (`res.ok` check) so one dead
   // API doesn't blank out the whole dashboard. If the whole batch throws (e.g. network down),
   // the catch below falls all the way back to simulated data.
@@ -120,8 +129,9 @@ export class SensorService {
     const WEATHER_GOV_API = "https://weather.gov";
 
     try {
-      const [accelRes, strainRes, gnssRes, hydroRes, weatherRes] = await Promise.all([
+      const [accelRes, geoRes, strainRes, gnssRes, hydroRes, weatherRes] = await Promise.all([
         fetch(`${COMPANY_A_API}/accelerometers`),
+        fetch(`${COMPANY_A_API}/geophones`),
         fetch(`${COMPANY_A_API}/strain-gauges`),
         fetch(`${COMPANY_A_API}/gnss-positioning`),
         fetch(`${COMPANY_B_API}/river-metrics`),
@@ -129,6 +139,7 @@ export class SensorService {
       ]);
 
       const accelData = accelRes.ok ? await accelRes.json() : null;
+      const geoData = geoRes.ok ? await geoRes.json() : null;
       const strainData = strainRes.ok ? await strainRes.json() : null;
       const gnssData = gnssRes.ok ? await gnssRes.json() : null;
       const hydroData = hydroRes.ok ? await hydroRes.json() : null;
@@ -138,6 +149,13 @@ export class SensorService {
         timeString: timeStr,
 
         accelerometers: accelData ? accelData.map((device: any) => ({
+          x: device.x,
+          y: device.y,
+          z: device.z
+        })) : Array(10).fill({ x: 0, y: 0, z: 0 }),
+
+        // Same vendor/device shape as accelerometers - paired 1:1 by array position.
+        geophones: geoData ? geoData.map((device: any) => ({
           x: device.x,
           y: device.y,
           z: device.z

@@ -10,7 +10,7 @@ that link to live (simulated or real-hardware) structural/environmental telemetr
 
 ## Commands
 
-- `npm start` — runs the Vite dev server at http://localhost:3000 (requires `.env` configured, see below)
+- `npm start` — runs the Vite dev server at `http://localhost:3000` (requires `.env` configured, see below)
 - `npm run build` — `tsc -b && vite build`; use this (not a separate `tsc` invocation) to typecheck, since `tsconfig.json` has `noEmit: true` and is a build-mode config (`tsc -b`)
 - `npm run lint` — ESLint over the whole repo
 - `npm run preview` — serves the production `dist` build on port 3000
@@ -19,11 +19,12 @@ There is no test suite (`"test": ""` in package.json, no test files present).
 
 ### Required `.env`
 
-The app throws at startup (see `src/index.tsx`) if OIDC settings are missing. Required keys:
-`IMJS_AUTH_CLIENT_CLIENT_ID`, `IMJS_AUTH_CLIENT_REDIRECT_URI`, `IMJS_AUTH_CLIENT_LOGOUT_URI`,
-`IMJS_AUTH_CLIENT_SCOPES`, `IMJS_AUTH_AUTHORITY`. Also `IMJS_ITWIN_ID`/`IMJS_IMODEL_ID` (or pass
-`?iTwinId=...&iModelId=...` in the URL instead — see `src/components/Routes.tsx`). Sensor-service
-mode is controlled by `VITE_SENSOR_MODE` (`SIMULATED` default, or `REAL` — see `VITE_COMPANY_A_URL`
+The app throws at startup (see `src/index.tsx`) if any of `IMJS_AUTH_CLIENT_CLIENT_ID`,
+`IMJS_AUTH_CLIENT_SCOPES`, or `IMJS_AUTH_CLIENT_REDIRECT_URI` are missing. `IMJS_AUTH_CLIENT_LOGOUT_URI`
+and `IMJS_AUTH_AUTHORITY` are also read (see `Authorization.tsx`) but not guarded by a startup
+check. Also `IMJS_ITWIN_ID`/`IMJS_IMODEL_ID` (or pass `?iTwinId=...&iModelId=...` in the URL instead
+— see `src/components/Routes.tsx`). Sensor-service mode is controlled by `VITE_SENSOR_MODE`
+(`SIMULATED` default, or `REAL` — see `VITE_COMPANY_A_URL`
 / `VITE_COMPANY_B_URL` for vendor endpoints). See `README.md` for how to obtain OIDC/iTwin/iModel
 values.
 

@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { onSensorGraphRequested, SensorGraphRequest } from "../Sensors/sensorGraphRequest";
-import { getSnapshots, onSnapshotsChanged } from "../Sensors/sensorDataStore";
-import { buildChartData, getSensorSeries } from "../Sensors/chartData";
+import { onSensorGraphRequested, SensorGraphRequest } from "./sensorGraphRequest";
+import { getSnapshots, onSnapshotsChanged } from "./sensorDataStore";
+import { buildChartData, getSensorSeries } from "./chartData";
 
 // Mounted once, permanently, in App.tsx (as a sibling of <Viewer>, not one of the AppUI side
 // tabs) so it can pop up regardless of which tab is currently open. Listens for
@@ -24,7 +24,10 @@ export function SensorGraphPopup() {
     return onSnapshotsChanged.addListener(() => setTick((t) => t + 1));
   }, [request]);
 
-  const series = useMemo(
+  // An array, not a single series, because some sensors are paired (e.g. an accelerometer
+  // marker's click also shows its co-located geophone reading - see chartData.ts's
+  // getSensorSeries for the pairing).
+  const seriesList = useMemo(
     () => (request ? getSensorSeries(request.sensorType, request.nodeIndex) : undefined),
     [request]
   );
@@ -37,7 +40,7 @@ export function SensorGraphPopup() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const chartData = useMemo(() => buildChartData(getSnapshots()).slice(-45), [request, tick]);
 
-  if (!request || !series) return null;
+  if (!request || !seriesList || seriesList.length === 0) return null;
 
   return (
     <div
@@ -61,7 +64,7 @@ export function SensorGraphPopup() {
       {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions */}
       <div
         role="dialog"
-        aria-label={series.title}
+        aria-label={seriesList[0].title}
         onClick={(e) => e.stopPropagation()}
         style={{
           background: "#fff",
@@ -70,14 +73,13 @@ export function SensorGraphPopup() {
           padding: "16px",
           width: "480px",
           maxWidth: "90vw",
+          maxHeight: "85vh",
+          overflowY: "auto",
           boxShadow: "0 10px 40px rgba(0,0,0,0.3)",
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-          <div>
-            <h3 style={{ margin: 0, fontSize: "15px", color: "#005A9C" }}>{series.title}</h3>
-            <span style={{ fontSize: "11px", opacity: 0.6 }}>{request.elementId} - {series.unit}</span>
-          </div>
+          <span style={{ fontSize: "11px", opacity: 0.6 }}>{request.elementId}</span>
           <button
             type="button"
             onClick={() => setRequest(undefined)}
@@ -87,29 +89,37 @@ export function SensorGraphPopup() {
             ✕
           </button>
         </div>
-        <div style={{ width: "100%", height: "220px" }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#edf2f7" />
-              <XAxis dataKey="time" stroke="#718096" style={{ fontSize: "9px" }} />
-              <YAxis stroke="#718096" style={{ fontSize: "9px" }} domain={["auto", "auto"]} />
-              <Tooltip wrapperStyle={{ zIndex: 10001 }} />
-              <Legend iconType="plainline" wrapperStyle={{ fontSize: "10px", paddingTop: "4px" }} />
-              {series.lines.map((line) => (
-                <Line
-                  key={line.dataKey}
-                  name={line.name}
-                  type="monotone"
-                  dataKey={line.dataKey}
-                  stroke={line.color}
-                  strokeWidth={1.5}
-                  dot={false}
-                  isAnimationActive={false}
-                />
-              ))}
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        {/* One sub-chart per paired series (e.g. accelerometer + its co-located geophone) -
+            see chartData.ts's getSensorSeries for how that pairing is decided. */}
+        {seriesList.map((series) => (
+          <div key={series.title} style={{ marginBottom: "16px" }}>
+            <h3 style={{ margin: "0 0 2px 0", fontSize: "14px", color: "#005A9C" }}>{series.title}</h3>
+            <span style={{ fontSize: "11px", opacity: 0.6 }}>{series.unit}</span>
+            <div style={{ width: "100%", height: "180px", marginTop: "4px" }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#edf2f7" />
+                  <XAxis dataKey="time" stroke="#718096" style={{ fontSize: "9px" }} />
+                  <YAxis stroke="#718096" style={{ fontSize: "9px" }} domain={["auto", "auto"]} />
+                  <Tooltip wrapperStyle={{ zIndex: 10001 }} />
+                  <Legend iconType="plainline" wrapperStyle={{ fontSize: "10px", paddingTop: "4px" }} />
+                  {series.lines.map((line) => (
+                    <Line
+                      key={line.dataKey}
+                      name={line.name}
+                      type="monotone"
+                      dataKey={line.dataKey}
+                      stroke={line.color}
+                      strokeWidth={1.5}
+                      dot={false}
+                      isAnimationActive={false}
+                    />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

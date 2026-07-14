@@ -119,10 +119,11 @@ export const IoTDashboard: React.FC = () => {
   const [data, setData] = useState(() => getSnapshots());
   // 'none' = the overview grid (3 summary cards); any other value = the single-section
   // "exploded" per-node grid triggered by clicking "Click to Explode" on a card.
-  const [expandedSection, setExpandedSection] = useState<'none' | 'accel' | 'strain' | 'hydro' | 'gnss'>('none');
+  const [expandedSection, setExpandedSection] = useState<'none' | 'accel' | 'geophone' | 'strain' | 'hydro' | 'gnss'>('none');
 
   // Track independent timeframes for each chart section
   const [accelTimeframe, setAccelTimeframe] = useState('Real time');
+  const [geophoneTimeframe, setGeophoneTimeframe] = useState('Real time');
   const [strainTimeframe, setStrainTimeframe] = useState('Real time');
   const [hydroTimeframe, setHydroTimeframe] = useState('Real time');
   const [gnssTimeframe, setGnssTimeframe] = useState('Real time');
@@ -181,7 +182,7 @@ export const IoTDashboard: React.FC = () => {
     if (isRealHardware) {
       // Define an internal async routine to keep the compiler happy
       // NOTE: this always fetches using `accelTimeframe` specifically, even though the
-      // effect re-runs when any of the 6 timeframe dropdowns change. If you want each
+      // effect re-runs when any of the 7 timeframe dropdowns change. If you want each
       // section's dropdown to independently control its own historical window, this would
       // need to fetch/store history per-section rather than replacing all of `data` here.
       const fetchHistory = async () => {
@@ -199,7 +200,7 @@ export const IoTDashboard: React.FC = () => {
       };
       fetchHistory().catch(() => {});
     }
-  }, [accelTimeframe, strainTimeframe, hydroTimeframe, gnssTimeframe, runoffTimeframe, scourTimeframe]);
+  }, [accelTimeframe, geophoneTimeframe, strainTimeframe, hydroTimeframe, gnssTimeframe, runoffTimeframe, scourTimeframe]);
 
 
   // Flattens each nested SensorSnapshot into one object per data point with keys like
@@ -210,8 +211,8 @@ export const IoTDashboard: React.FC = () => {
   const chartData = useMemo(() => buildChartData(data), [data]);
 
   const latest = data[data.length - 1];
-  // Cycled through (via `colors[i % colors.length]`) to give each of the 10 accelerometer
-  // nodes / 9 strain gauges a distinct, repeatable line color.
+  // Cycled through (via `colors[i % colors.length]`) to give each of the 10 accelerometer/
+  // geophone nodes or 9 strain gauges a distinct, repeatable line color.
   const colors = ['#ff4d4f', '#faad14', '#13c2c2', '#52c41a', '#1890ff', '#722ed1', '#eb2f96', '#2f54eb', '#fa8c16', '#a0d911'];
 
   return (
@@ -286,7 +287,43 @@ export const IoTDashboard: React.FC = () => {
             </div>
           </div>
 
-          {/* 2. STRAIN GAUGE MATRIX CARD */}
+          {/* 2. GEOPHONE ARRAY CARD - paired 1:1 with the accelerometer nodes above (same
+              node count/order - see SensorService.ts's SensorSnapshot.geophones) */}
+          <div style={{ background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0', position: 'relative' }}>
+            <h4 style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#2d3748' }}>
+              📳 Geophone Array (All 10 Nodes){' '}
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={() => setExpandedSection('geophone')}
+                onKeyDown={(e) => e.key === 'Enter' && setExpandedSection('geophone')}
+                style={{ color: '#005A9C', fontSize: '11px', cursor: 'pointer', marginLeft: '4px' }}
+              >
+                🔍 Click to Explode
+              </span>
+            </h4>
+            <ChartTimeframeDropdown value={geophoneTimeframe} onChange={setGeophoneTimeframe} />
+            <div style={{ width: '100%', height: '180px',}}>
+              <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={getFilteredChartData(geophoneTimeframe)} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#edf2f7" />
+                  <XAxis dataKey="time" stroke="#718096" style={{ fontSize: '9px' }} />
+                  <YAxis stroke="#718096" style={{ fontSize: '9px' }} domain={['auto','auto']} />
+                  <Tooltip wrapperStyle={{ zIndex: 9999, pointerEvents: 'auto' }} content={<ScrollLockedTooltipContent />} />
+                  <Legend iconType="plainline" wrapperStyle={{ fontSize: '10px', paddingTop: '4px' }} />
+                  {Array.from({ length: 10 }).map((_, i) => (
+                    <React.Fragment key={i}>
+                      <Line name={`N${i+1}-X`} type="monotone" dataKey={`geo_${i}_X`} stroke={colors[i % colors.length]} strokeWidth={1} dot={false} isAnimationActive={false} />
+                      <Line name={`N${i+1}-Y`} type="monotone" dataKey={`geo_${i}_Y`} stroke={colors[i % colors.length]} strokeWidth={1} strokeDasharray="2 2" dot={false} isAnimationActive={false} />
+                      <Line name={`N${i+1}-Z`} type="monotone" dataKey={`geo_${i}_Z`} stroke={colors[i % colors.length]} strokeWidth={1.5} strokeDasharray="1 1" dot={false} isAnimationActive={false} />
+                    </React.Fragment>
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* 3. STRAIN GAUGE MATRIX CARD */}
           <div style={{ background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0', position: 'relative' }}>
             <h4 style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#2d3748' }}>
               📐 Strain Gauge Matrix (All 9 Channels){' '}
@@ -317,7 +354,7 @@ export const IoTDashboard: React.FC = () => {
             </div>
           </div>
 
-          {/* 3. HYDROLOGY SUMMARY CARD */}
+          {/* 4. HYDROLOGY SUMMARY CARD */}
           <div style={{ background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0', position: 'relative' }}>
             <h4 style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#2d3748' }}>
               🌊 Hydrology Summary {' '}
@@ -371,6 +408,24 @@ export const IoTDashboard: React.FC = () => {
                       <Line name="X-Axis" type="monotone" dataKey={`acc_${i}_X`} stroke="#ff4d4f" strokeWidth={1.5} dot={false} isAnimationActive={false} />
                       <Line name="Y-Axis" type="monotone" dataKey={`acc_${i}_Y`} stroke="#faad14" strokeWidth={1.5} dot={false} isAnimationActive={false} />
                       <Line name="Z-Axis" type="monotone" dataKey={`acc_${i}_Z`} stroke="#1890ff" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            ))}
+
+            {expandedSection === 'geophone' && Array.from({ length: 10 }).map((_, i) => (
+              <div key={i} style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
+                <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>📳 Geophone Node {i + 1} (in/s)</h5>
+                 <ChartTimeframeDropdown value={geophoneTimeframe} onChange={setGeophoneTimeframe} />
+                  <div style={{ width: '100%', height: '180px',}}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={getFilteredChartData(geophoneTimeframe)} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
+                      <Line name="X-Axis" type="monotone" dataKey={`geo_${i}_X`} stroke="#ff4d4f" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+                      <Line name="Y-Axis" type="monotone" dataKey={`geo_${i}_Y`} stroke="#faad14" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+                      <Line name="Z-Axis" type="monotone" dataKey={`geo_${i}_Z`} stroke="#1890ff" strokeWidth={1.5} dot={false} isAnimationActive={false} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
