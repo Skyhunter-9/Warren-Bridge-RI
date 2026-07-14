@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { IModelApp, IModelConnection } from "@itwin/core-frontend";
-import { SENSOR_GROUPS, SensorType } from "./SensorIcons";
-import { resolveSensorPosition } from "./resolveSensorPosition";
+import { getEntryDisplayId, getEntryOffset, isGeoPlacement, SENSOR_GROUPS, SensorType } from "./SensorIcons";
+import { resolveGeoPosition, resolveSensorPosition } from "./resolveSensorPosition";
 
 // Renders the "Sensors" side tab ("Sensor Station Registry" panel in the screenshots).
 // This is a diagnostic/debug view: it independently re-resolves every SENSOR_GROUPS Hex ID's
@@ -10,7 +10,9 @@ import { resolveSensorPosition } from "./resolveSensorPosition";
 // "configured/expected" count, and click one to fly the camera to it.
 
 interface ActiveSensorNode {
-  hexId: string;
+  // A real Hex ID, or a synthetic "geo:lat,long" label for a sensor placed by coordinates
+  // with no linked element - see getEntryDisplayId in SensorIcons.ts.
+  displayId: string;
   x: string;
   y: string;
   z: string;
@@ -31,20 +33,28 @@ export const SensorInspectorComponent = () => {
       for (const group of SENSOR_GROUPS) {
         const nodes: ActiveSensorNode[] = [];
 
-        for (const hexId of group.elementIds) {
+        for (const entry of group.elementIds) {
+          const displayId = getEntryDisplayId(entry);
           try {
-            const location = await resolveSensorPosition(iModel, hexId);
+            // Geo-placed entries resolve from an exact lat/long instead of an element's
+            // geometry - see SensorGeoPlacement in SensorIcons.ts.
+            const location = isGeoPlacement(entry)
+              ? await resolveGeoPosition(iModel, entry)
+              : await resolveSensorPosition(iModel, typeof entry === "string" ? entry : entry.elementId);
             if (location) {
+              // Match the same offset SensorDecorator.tsx applies, so this panel shows
+              // exactly where the marker actually renders, not just the raw resolved position.
+              const offset = getEntryOffset(entry);
               nodes.push({
-                hexId,
-                x: location.x.toString(),
-                y: location.y.toString(),
-                z: location.z.toString(),
+                displayId,
+                x: (location.x + offset.x).toString(),
+                y: (location.y + offset.y).toString(),
+                z: (location.z + offset.z).toString(),
               });
             }
           } catch (error) {
             // eslint-disable-next-line no-console
-            console.error(`Failed to map node ${hexId}:`, error);
+            console.error(`Failed to map node ${displayId}:`, error);
           }
         }
 
@@ -72,7 +82,11 @@ export const SensorInspectorComponent = () => {
 
   // Clicking a sensor row selects that element (highlights it) and animates the camera to
   // frame it - handy for confirming a Hex ID actually corresponds to the sensor you expect.
+  // No-ops for a synthetic "geo:lat,long" id (see getEntryDisplayId) since there's no element
+  // to select for a sensor placed purely by coordinates.
   const handleSelectFromList = async (id: string) => {
+    if (!id.startsWith("0x")) return;
+
     const vp = IModelApp.viewManager.selectedView;
     if (vp) {
       vp.iModel.selectionSet.replace(id);
@@ -109,12 +123,12 @@ export const SensorInspectorComponent = () => {
               <div style={{ maxHeight: "200px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "4px", background: "rgba(0,0,0,0.1)", borderRadius: "4px", padding: "4px" }}>
                 {nodes.map((sensor) => (
                   <button
-                    key={sensor.hexId}
-                    onClick={async () => handleSelectFromList(sensor.hexId)}
+                    key={sensor.displayId}
+                    onClick={async () => handleSelectFromList(sensor.displayId)}
                     type="button"
                     style={{ padding: "8px", background: "rgba(255,255,255,0.05)", borderRadius: "3px", cursor: "pointer", fontSize: "12px", display: "flex", flexDirection: "column", borderLeft: `4px solid ${group.color}`, borderTop: "none", borderRight: "none", borderBottom: "none", textAlign: "left", width: "100%", color: "inherit" }}
                   >
-                    <span style={{ fontFamily: "monospace", fontWeight: "bold", color: group.color }}> {sensor.hexId} </span>
+                    <span style={{ fontFamily: "monospace", fontWeight: "bold", color: group.color }}> {sensor.displayId} </span>
                     <span style={{ fontSize: "10px", opacity: 0.6, marginTop: "2px" }}> Coordinates: X:{sensor.x} Y:{sensor.y} Z:{sensor.z} </span>
                   </button>
                 ))}
