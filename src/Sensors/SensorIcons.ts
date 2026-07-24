@@ -125,10 +125,13 @@ export const SENSOR_GROUPS: SensorGroup[] = [
     iconUrl: "/icons/sensor-orange.svg",
     expectedCount: 5,
     elementIds: [
-      { latitude: 41.737358, longitude: -71.289568 }, 
-      { latitude: 41.737380, longitude: -71.289328 }, 
-      { latitude: 41.737411, longitude: -71.289082 }, 
-      { latitude: 41.737438, longitude: -71.288842 }
+      // elevationFt: 15 on all four - they're mounted 1ft above the handrail top, which
+      // (once modelshift/modelShiftConfig.ts's correction is working) sits at 14ft in this
+      // same elevation frame - see that file's target.elevationFt.
+      { latitude: 41.737358, longitude: -71.289568, elevationFt: 15 },
+      { latitude: 41.737380, longitude: -71.289328, elevationFt: 15 },
+      { latitude: 41.737411, longitude: -71.289082, elevationFt: 15 },
+      { latitude: 41.737438, longitude: -71.288842, elevationFt: 15 }
     ],
   },
   {

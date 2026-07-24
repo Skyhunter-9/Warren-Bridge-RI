@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { IModelApp, IModelConnection } from "@itwin/core-frontend";
+import { Range3d } from "@itwin/core-geometry";
 import { getEntryDisplayId, getEntryOffset, isGeoPlacement, SENSOR_GROUPS, SensorType } from "./SensorIcons";
 import { resolveGeoPosition, resolveSensorPosition } from "./resolveSensorPosition";
 
@@ -80,23 +81,33 @@ export const SensorInspectorComponent = () => {
     };
   }, []);
 
-  // Clicking a sensor row selects that element (highlights it) and animates the camera to
-  // frame it - handy for confirming a Hex ID actually corresponds to the sensor you expect.
-  // No-ops for a synthetic "geo:lat,long" id (see getEntryDisplayId) since there's no element
-  // to select for a sensor placed purely by coordinates.
-  const handleSelectFromList = async (id: string) => {
-    if (!id.startsWith("0x")) return;
-
+  // Clicking a sensor row flies the camera to it. For a real element (Hex ID), this also
+  // selects/highlights it via zoomToElements. For a synthetic "geo:lat,long" sensor (see
+  // getEntryDisplayId) there's no element to select, so instead this zooms to a small volume
+  // centered on its already-resolved coordinates (the same X/Y/Z shown in this row).
+  const handleSelectFromList = async (sensor: ActiveSensorNode) => {
     const vp = IModelApp.viewManager.selectedView;
-    if (vp) {
-      vp.iModel.selectionSet.replace(id);
+    if (!vp) return;
+
+    if (sensor.displayId.startsWith("0x")) {
+      vp.iModel.selectionSet.replace(sensor.displayId);
       try {
-        await vp.zoomToElements(id, { animateFrustumChange: true });
+        await vp.zoomToElements(sensor.displayId, { animateFrustumChange: true });
       } catch (error) {
         // eslint-disable-next-line no-console
         console.error("Camera sweep alignment failed:", error);
       }
+      return;
     }
+
+    // No element to select, so just frame a small cube around the point - the same margin
+    // regardless of sensor type, since these are all point-like markers, not sized geometry.
+    const x = parseFloat(sensor.x);
+    const y = parseFloat(sensor.y);
+    const z = parseFloat(sensor.z);
+    const volume = Range3d.createXYZXYZ(x, y, z, x, y, z);
+    volume.expandInPlace(5); // meters
+    vp.zoomToVolume(volume, { animateFrustumChange: true });
   };
 
   return (
@@ -124,7 +135,7 @@ export const SensorInspectorComponent = () => {
                 {nodes.map((sensor) => (
                   <button
                     key={sensor.displayId}
-                    onClick={async () => handleSelectFromList(sensor.displayId)}
+                    onClick={async () => handleSelectFromList(sensor)}
                     type="button"
                     style={{ padding: "8px", background: "rgba(255,255,255,0.05)", borderRadius: "3px", cursor: "pointer", fontSize: "12px", display: "flex", flexDirection: "column", borderLeft: `4px solid ${group.color}`, borderTop: "none", borderRight: "none", borderBottom: "none", textAlign: "left", width: "100%", color: "inherit" }}
                   >

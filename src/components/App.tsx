@@ -30,6 +30,7 @@ import { MyCustomUiProvider } from "./MyCustomUiProvider";
 import { Developer_Tab } from "./Developer_Tab";
 import { sensorDecorator } from "../Sensors/SensorDecorator";
 import { SensorGraphPopup } from "../Sensors/SensorGraphPopup";
+import { modelShiftProvider } from "../modelshift/ModelShiftProvider";
 
 interface AppProps {
   iTwinId: string;
@@ -61,6 +62,12 @@ export function App({ iTwinId, iModelId, changesetId }: AppProps) {
     IModelApp.viewManager.addDecorator(sensorDecorator);
     IModelApp.viewManager.onViewOpen.addOnce((viewport) => {
       void sensorDecorator.loadSensors(viewport.iModel);
+    });
+
+    // Corrects the bridge's geolocation by shifting the model's display (not its underlying
+    // data) once the view opens - see modelshift/modelShiftConfig.ts for the numbers to edit.
+    IModelApp.viewManager.onViewOpen.addOnce((viewport) => {
+      void modelShiftProvider.applyTo(viewport);
     });
   }, []);
 
