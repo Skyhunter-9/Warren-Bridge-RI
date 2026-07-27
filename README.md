@@ -2,11 +2,24 @@
 
 This project was scaffolded with [degit](https://github.com/Rich-Harris/degit).
 
+## Quick Start (shared copies of this project)
+
+If you received this whole project folder (not just cloned the bare repo) and have
+[Node.js](https://nodejs.org) (LTS) installed:
+
+- **Windows:** double-click `Launch Warren Bridge Viewer.bat`
+- **macOS/Linux:** run `./launch.sh` in a terminal (`chmod +x launch.sh` once first if needed)
+
+Either one installs dependencies on first run (skipped afterward) and starts the app - your
+browser opens automatically once it's ready. The `.env` file already has this project's
+configuration, so no extra setup is required. Close the terminal/console window it opens to
+stop the app.
+
 ## Environment Variables
 
 Prior to running the app, you will need to add OIDC client configuration to the variables in the .env file:
 
-```
+```env
 # ---- Authorization Client Settings ----
 IMJS_AUTH_CLIENT_CLIENT_ID=""
 IMJS_AUTH_CLIENT_REDIRECT_URI=""
@@ -24,7 +37,7 @@ IMJS_AUTH_CLIENT_SCOPES=""
 
 You should also add a valid iTwinId and iModelId for your user in the this file:
 
-```
+```env
 # ---- Test ids ----
 IMJS_ITWIN_ID = ""
 IMJS_IMODEL_ID = ""

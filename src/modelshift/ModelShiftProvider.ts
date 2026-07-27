@@ -4,7 +4,7 @@ import {
   type ModelDisplayTransformProvider,
   type ScreenViewport,
 } from "@itwin/core-frontend";
-import { Point3d, Transform, Vector3d } from "@itwin/core-geometry";
+import { Geometry, Point3d, Transform, Vector3d } from "@itwin/core-geometry";
 import { resolveGeoPosition } from "../Sensors/resolveSensorPosition";
 import { MODEL_SHIFT_CONFIG } from "./modelShiftConfig";
 
@@ -53,7 +53,20 @@ export class ModelShiftProvider implements ModelDisplayTransformProvider {
       MODEL_SHIFT_CONFIG.currentPosition.y,
       MODEL_SHIFT_CONFIG.currentPosition.z
     );
-    this.transform = Transform.createTranslation(Vector3d.createStartEnd(current, target));
+    const shiftVector = Vector3d.createStartEnd(current, target);
+    this.transform = Transform.createTranslation(shiftVector);
+
+    // Diagnostic only - how far currentPosition actually is from target, in feet, both
+    // horizontally and in 3D. Meters -> feet since that's this app's convention everywhere
+    // else (see FEET_TO_METERS in SensorIcons.ts/resolveSensorPosition.ts).
+    const METERS_TO_FEET = 1 / 0.3048;
+    const horizontalFt = Geometry.hypotenuseXY(shiftVector.x, shiftVector.y) * METERS_TO_FEET;
+    const verticalFt = shiftVector.z * METERS_TO_FEET;
+    const totalFt = shiftVector.magnitude() * METERS_TO_FEET;
+    // eslint-disable-next-line no-console
+    console.log(
+      `ModelShiftProvider: currentPosition is ${horizontalFt.toFixed(1)}ft horizontally and ${verticalFt.toFixed(1)}ft vertically from target (${totalFt.toFixed(1)}ft total).`
+    );
   }
 
   /** Computes the shift and installs this provider on the given viewport's view. Call once
