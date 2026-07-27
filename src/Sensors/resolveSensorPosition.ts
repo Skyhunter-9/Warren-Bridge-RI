@@ -1,7 +1,6 @@
 import { Point3d } from "@itwin/core-geometry";
-import { Cartographic, Placement3d, Placement3dProps } from "@itwin/core-common";
+import { Placement3d, Placement3dProps } from "@itwin/core-common";
 import { IModelConnection } from "@itwin/core-frontend";
-import { SensorGeoPlacement } from "./SensorIcons";
 
 // iTwin.js's spatial coordinate system is always in meters (a BIS/iModel standard, not
 // something this app can change), so this US-customary constant gets converted right before
@@ -49,30 +48,4 @@ export async function resolveSensorPosition(
   }
 
   return undefined;
-}
-
-/**
- * Resolves the real-world marker position for a sensor placed by exact latitude/longitude
- * (a SensorGeoPlacement - see SensorIcons.ts) instead of by attaching it to an element.
- * Converts degrees + feet to the iModel's spatial coordinate system via its geographic
- * coordinate system (iModel.cartographicToSpatial) - this requires the iModel to actually be
- * geolocated; if it isn't, or the conversion otherwise fails, this returns undefined (logging
- * a warning) rather than throwing, same as resolveSensorPosition above.
- */
-export async function resolveGeoPosition(
-  iModel: IModelConnection,
-  geo: SensorGeoPlacement
-): Promise<Point3d | undefined> {
-  try {
-    const cartographic = Cartographic.fromDegrees({
-      longitude: geo.longitude,
-      latitude: geo.latitude,
-      height: (geo.elevationFt ?? 0) * FEET_TO_METERS,
-    });
-    return await iModel.cartographicToSpatial(cartographic);
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.warn(`Failed to convert lat/long (${geo.latitude}, ${geo.longitude}) to a spatial point - is this iModel geolocated?`, error);
-    return undefined;
-  }
 }

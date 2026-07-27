@@ -5,8 +5,8 @@ import {
   IModelApp,
   IModelConnection,
 } from "@itwin/core-frontend";
-import { ElementIconMarker, getEntryDisplayId, getEntryOffset, isGeoPlacement, SENSOR_GROUPS } from "./SensorIcons";
-import { resolveGeoPosition, resolveSensorPosition } from "./resolveSensorPosition";
+import { ElementIconMarker, getEntryElementId, getEntryOffset, SENSOR_GROUPS } from "./SensorIcons";
+import { resolveSensorPosition } from "./resolveSensorPosition";
 
 // A "Decorator" is iTwin.js's mechanism for drawing custom graphics (things that aren't part
 // of the actual iModel geometry) into the 3D viewport every frame - here, the colored sensor
@@ -41,26 +41,22 @@ export class SensorDecorator implements Decorator {
       // back to a specific chart series in SensorGraphPopup - see chartData.ts.
       for (let nodeIndex = 0; nodeIndex < group.elementIds.length; nodeIndex++) {
         const entry = group.elementIds[nodeIndex];
-        const displayId = getEntryDisplayId(entry);
+        const elementId = getEntryElementId(entry);
         try {
-          // Geo-placed entries resolve from an exact lat/long instead of an element's
-          // geometry - see SensorGeoPlacement in SensorIcons.ts.
-          const location = isGeoPlacement(entry)
-            ? await resolveGeoPosition(iModel, entry)
-            : await resolveSensorPosition(iModel, typeof entry === "string" ? entry : entry.elementId);
+          const location = await resolveSensorPosition(iModel, elementId);
           if (location) {
             // Nudges the marker away from its resolved position, if this entry specified an
-            // offset (see SensorPlacement/SensorGeoPlacement in SensorIcons.ts) - defaults to
-            // {0,0,0} for plain Hex ID entries, i.e. no change from before.
+            // offset (see SensorPlacement in SensorIcons.ts) - defaults to {0,0,0} for plain
+            // Hex ID entries, i.e. no change from before.
             const offset = getEntryOffset(entry);
             location.x += offset.x;
             location.y += offset.y;
             location.z += offset.z;
-            markers.push(new ElementIconMarker(location, displayId, group.type, nodeIndex, image));
+            markers.push(new ElementIconMarker(location, elementId, group.type, nodeIndex, image));
           }
         } catch (error) {
           // eslint-disable-next-line no-console
-          console.error(`Failed to load ${group.label} sensor ${displayId}:`, error);
+          console.error(`Failed to load ${group.label} sensor ${elementId}:`, error);
         }
       }
     }

@@ -2,29 +2,18 @@ import React, { useEffect, useState } from "react";
 import { StagePanelLocation, StagePanelSection, UiItemsProvider, Widget } from "@itwin/appui-react";
 import { IModelApp, NotifyMessageDetails, OutputMessagePriority } from "@itwin/core-frontend";
 import { resolveSensorPosition } from "../Sensors/resolveSensorPosition";
-import { modelShiftProvider } from "../modelshift/ModelShiftProvider";
 
 // Renders the "Developer Tab" side panel: a toggleable "Hex ID Inspector" that watches
 // whatever element you click in the 3D view, copies its Hex ID to the clipboard, and shows
-// its resolved spatial position (meters) plus which Model it belongs to. This is the fastest
-// way to find:
-//   - the real element ID for a new sensor to add to SENSOR_GROUPS (src/Sensors/SensorIcons.ts);
-//   - the Model ID for excludedModelIds (src/modelshift/modelShiftConfig.ts) - note this is
-//     NOT the same as the element's own Hex ID above it (a common mixup - the Properties
-//     panel's "Model" field only shows a human-readable name, not this raw id, which is why
-//     it's surfaced here instead);
-//   - the currentPosition value for modelShiftConfig.ts's reference point - click the
-//     reference element with this active and read its resolved X/Y/Z below.
+// its resolved spatial position (meters), Model ID, and Category ID. This is the fastest way
+// to find the real element ID for a new sensor to add to SENSOR_GROUPS
+// (src/Sensors/SensorIcons.ts), or its offset via the resolved position shown below.
 const NewFeatureComponent = () => {
   const [isEnabled, setIsEnabled] = useState<boolean>(false);
   const [hexId, setHexId] = useState<string>("None");
   const [modelId, setModelId] = useState<string>("None");
   const [categoryId, setCategoryId] = useState<string>("None");
   const [position, setPosition] = useState<{ x: number; y: number; z: number } | undefined>(undefined);
-  // Mirrors modelShiftProvider's own enabled flag so this button's label stays in sync -
-  // initialized from the provider itself rather than assuming true, in case it's ever
-  // toggled from somewhere else.
-  const [isShiftEnabled, setIsShiftEnabled] = useState<boolean>(() => modelShiftProvider.isEnabled);
 
   useEffect(() => {
     if (!isEnabled) {
@@ -58,17 +47,15 @@ const NewFeatureComponent = () => {
         navigator.clipboard.writeText(firstElementId).catch(() => {});
 
         // Same bbox-center resolution SensorDecorator.tsx uses for markers - shown here so
-        // you can read off a currentPosition value for modelshift/modelShiftConfig.ts without
-        // having to temporarily add the element as a sensor just to see its coordinates.
+        // you can read off a sensor's position without having to temporarily add it as a
+        // sensor just to see its coordinates.
         void resolveSensorPosition(iModelConnection, firstElementId).then((location) => {
           if (location) setPosition({ x: location.x, y: location.y, z: location.z });
         });
 
-        // ElementProps.model is the Hex ID of the Model this element lives in - what
-        // modelshift/modelShiftConfig.ts's excludedModelIds actually needs (not the
-        // element's own id above). category (only present on GeometricElementProps, hence
-        // the `any` cast) is here to check whether terrain and structural elements can be
-        // told apart by category when they share a Model - see ModelShiftProvider.ts.
+        // ElementProps.model/category (category only present on GeometricElementProps,
+        // hence the `any` cast) - handy for understanding an element's place in the iModel's
+        // structure beyond just its own Hex ID.
         void iModelConnection.elements.getProps(firstElementId).then((propsArray) => {
           const props = propsArray[0] as any;
           setModelId(props?.model ?? "unknown");
@@ -96,16 +83,6 @@ const NewFeatureComponent = () => {
     }
   };
 
-  // Flips the bridge's geolocation correction (modelshift/ModelShiftProvider.ts) off/on live,
-  // without touching modelShiftConfig.ts or reloading the page - e.g. turn it off to see the
-  // model at its raw, un-shifted position while you pick a reference element and read its
-  // true position above, then turn it back on once you've updated the config.
-  const toggleModelShift = () => {
-    const next = !isShiftEnabled;
-    modelShiftProvider.setEnabled(next);
-    setIsShiftEnabled(next);
-  };
-
   return (
     <div style={{ padding: "16px", color: "var(--itwin-color-text)", display: "flex", flexDirection: "column", gap: "12px" }}>
       <h3>Developer Utilities</h3>
@@ -125,27 +102,12 @@ const NewFeatureComponent = () => {
         {isEnabled ? "🟢 Hex ID Inspector Active" : "⚫ Activate Hex ID Inspector"}
       </button>
 
-      <button
-        onClick={toggleModelShift}
-        style={{
-          padding: "8px 12px",
-          backgroundColor: isShiftEnabled ? "#008b45" : "#a33",
-          color: "#fff",
-          border: "none",
-          borderRadius: "4px",
-          cursor: "pointer",
-          fontWeight: "bold"
-        }}
-      >
-        {isShiftEnabled ? "🟢 Model Shift ON (bridge corrected)" : "🔴 Model Shift OFF (raw position)"}
-      </button>
-
       <div style={{ marginTop: "8px", background: "rgba(0,0,0,0.2)", padding: "8px", borderRadius: "4px" }}>
         <span style={{ fontSize: "12px", display: "block", opacity: 0.7 }}>Selected Hex ID:</span>
         <div style={{ fontFamily: "monospace", fontSize: "16px", fontWeight: "bold", color: isEnabled ? "#4caf50" : "inherit", marginTop: "4px" }}>
           {hexId}
         </div>
-        <span style={{ fontSize: "12px", display: "block", opacity: 0.7, marginTop: "8px" }}>Model ID (for excludedModelIds):</span>
+        <span style={{ fontSize: "12px", display: "block", opacity: 0.7, marginTop: "8px" }}>Model ID:</span>
         <div style={{ fontFamily: "monospace", fontSize: "14px", fontWeight: "bold", color: isEnabled ? "#ffa726" : "inherit", marginTop: "4px" }}>
           {modelId}
         </div>
