@@ -25,8 +25,9 @@ and `IMJS_AUTH_AUTHORITY` are also read (see `Authorization.tsx`) but not guarde
 check. Also `IMJS_ITWIN_ID`/`IMJS_IMODEL_ID` (or pass `?iTwinId=...&iModelId=...` in the URL instead
 — see `src/components/Routes.tsx`). Sensor-service mode is controlled by `VITE_SENSOR_MODE`
 (`SIMULATED` default, or `REAL` — see `VITE_COMPANY_A_URL`
-/ `VITE_COMPANY_B_URL` for vendor endpoints). See `README.md` for how to obtain OIDC/iTwin/iModel
-values.
+/ `VITE_COMPANY_B_URL` for vendor endpoints); the same switch also gates the wave radar display
+(see `VITE_RADAR_VENDOR_URL`, `src/radarprocessing/radarService.ts`). See `README.md` for how to
+obtain OIDC/iTwin/iModel values.
 
 ## Architecture
 
@@ -96,6 +97,34 @@ AppUI tabs), so a marker's popup chart can appear regardless of which side tab i
 `IoTDashboard.tsx` (rendered inside the "IoT Dashboard" tab) mirrors `sensorDataStore` rather than
 polling itself, and reuses `buildChartData`/the same field-naming convention as the popup so both
 stay in sync.
+
+### Wave radar display (`src/radarprocessing/`, `src/radargraph/`)
+
+A dual-view display (raw PPI echo vs. processed directional wave spectrum) rendered under the
+Hydrology Summary card in `IoTDashboard.tsx`. Split the same way the rest of this app separates
+data from rendering: `radarprocessing/` owns data/derivation, `radargraph/` only draws it. This
+unit is permanently bolted to the bridge structure (not aboard a moving vessel), so its data
+model deliberately has no heading/course/speed-over-ground fields, and it uses this app's US
+customary units (feet, mph) rather than nautical miles/m-per-s.
+
+- **`radarprocessing/radarTypes.ts`** — `RadarSweep` (antenna metadata + `mountingBearingDeg`,
+  the antenna's fixed as-installed compass orientation) and `WaveSpectrum` (a single-peaked
+  directional wave-energy blob: peak direction/period, spread, energy, plus wind dir/speed) —
+  the contract between the two folders.
+- **`radarprocessing/radarService.ts`** — mirrors `SensorService.ts`'s `getMode()` split
+  exactly: `VITE_SENSOR_MODE=REAL` calls `VITE_RADAR_VENDOR_URL`'s `/wave-radar-status`
+  endpoint (per-field fallback, whole-batch fallback to simulated on failure); this is the
+  integration point for a real radar box — point the env var at it, no code changes needed as
+  long as the vendor returns the flat JSON shape documented in that file.
+- **`radarprocessing/radarEchoSimulator.ts`** / **`waveSpectrumProcessor.ts`** — SIMULATED-mode
+  fabrication; the wave spectrum's period/energy scale off the `waveRadar` sensor's current
+  `waveHeight` (`SensorService.ts`) so it isn't disconnected from the rest of the dashboard.
+- **`radarprocessing/radarDataStore.ts`** — eager-singleton polling loop (2s, roughly one
+  antenna rotation) through `RadarService`, same `BeEvent` pattern as `sensorDataStore.ts`.
+- **`radargraph/RadarEchoCanvas.tsx`** / **`WaveSpectrumCanvas.tsx`** — Canvas-based polar
+  renders (compass-oriented: 0°=North=up, clockwise) via shared helpers in
+  **`polarCanvasUtils.ts`**. `RadarWaveWidget.tsx` is the card with the echo/spectrum toggle,
+  mounted directly in `IoTDashboard.tsx`.
 
 ### Adding a new sensor
 

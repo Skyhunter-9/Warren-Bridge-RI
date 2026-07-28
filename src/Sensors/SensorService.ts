@@ -32,7 +32,22 @@ export interface SensorSnapshot {
   // Significant wave height from a radar wave gauge, co-located with waterLevel[1].
   waveHeight: number;
   scour: number[];
-  weather: { temp: number; windSpeed: number; humidity: number };
+  // Modeled on an Airmar WX-series ultrasonic weather station: windSpeed/windDirDeg/temp/
+  // pressure/humidity are the sensor's raw readings (apparent wind, air temp, barometric
+  // pressure, relative humidity); windChill/dewPoint/heatIndex are never measured directly -
+  // they're always calculated from those raw readings (see calcWindChill/calcDewPoint/
+  // calcHeatIndex below), the same way a real weather station display derives them, in both
+  // SIMULATED and REAL mode.
+  weather: {
+    windSpeed: number; // apparent wind speed, mph
+    windDirDeg: number; // apparent wind direction, deg True
+    temp: number; // air temperature, °F
+    windChill: number; // calculated, °F
+    pressure: number; // barometric pressure, inHg
+    humidity: number; // relative humidity, %
+    dewPoint: number; // calculated, °F
+    heatIndex: number; // calculated, °F
+  };
 }
 
 // 2. Data conversion functions
@@ -40,6 +55,40 @@ const mGToIn = (mg: number) => parseFloat((mg * 0.386).toFixed(2));
 const usToPsi = (us: number) => parseFloat((us * 0.029).toFixed(2));
 const mmToIn = (mm: number) => parseFloat((mm * 0.039).toFixed(2));
 const mpsToMph = (mps: number) => parseFloat((mps * 2.23).toFixed(1));
+
+// 2b. Weather calculations - derived from raw temp (°F)/humidity (%)/wind speed (mph), never
+// read directly off the sensor. Shared by both generateSimulatedData and fetchRealHardwareData
+// so the two modes always compute these the exact same way.
+
+// National Weather Service wind chill formula - only has a cooling effect at <=50°F and
+// wind >=3mph; outside that range "wind chill" is just the air temperature.
+function calcWindChill(tempF: number, windMph: number): number {
+  if (tempF > 50 || windMph < 3) return parseFloat(tempF.toFixed(1));
+  const v16 = Math.pow(windMph, 0.16);
+  return parseFloat((35.74 + 0.6215 * tempF - 35.75 * v16 + 0.4275 * tempF * v16).toFixed(1));
+}
+
+// Magnus-Tetens approximation - computed in Celsius, then converted back to °F.
+function calcDewPoint(tempF: number, humidityPct: number): number {
+  const tempC = (tempF - 32) * (5 / 9);
+  const a = 17.27;
+  const b = 237.7;
+  const alpha = (a * tempC) / (b + tempC) + Math.log(humidityPct / 100);
+  const dewC = (b * alpha) / (a - alpha);
+  return parseFloat((dewC * (9 / 5) + 32).toFixed(1));
+}
+
+// NWS Rothfusz regression - only has a meaningful effect at >=80°F; below that "heat index" is
+// just the air temperature.
+function calcHeatIndex(tempF: number, humidityPct: number): number {
+  if (tempF < 80) return parseFloat(tempF.toFixed(1));
+  const T = tempF;
+  const R = humidityPct;
+  const hi =
+    -42.379 + 2.04901523 * T + 10.14333127 * R - 0.22475541 * T * R - 0.00683783 * T * T -
+    0.05481717 * R * R + 0.00122874 * T * T * R + 0.00085282 * T * R * R - 0.00000199 * T * T * R * R;
+  return parseFloat(hi.toFixed(1));
+}
 
 export class SensorService {
   // 3. Mode Toggle
@@ -89,6 +138,12 @@ export class SensorService {
     const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
     const t = now.getTime();
 
+    const windSpeed = mpsToMph(4.5 + Math.sin(t / 20000) * 1.5);
+    const windDirDeg = (25 + Math.sin(t / 40000) * 8 + 360) % 360;
+    const temp = parseFloat((22 * 1.8 + 32 + Math.sin(t / 60000) * 3).toFixed(1));
+    const pressure = parseFloat((29.92 + Math.sin(t / 45000) * 0.15).toFixed(2));
+    const humidity = parseFloat((55 + Math.sin(t / 30000) * 10).toFixed(1));
+
     return {
       timeString: timeStr,
       timestamp: t,
@@ -118,10 +173,15 @@ export class SensorService {
         parseFloat((50.4 + Math.cos(t / 15000) * 2).toFixed(2)), 
         parseFloat((50.4 + Math.sin(t / 15000) * 2).toFixed(2))
       ],
-      weather: { 
-        temp: parseFloat((22 * 1.8 + 32 + Math.sin(t / 60000) * 3).toFixed(1)), 
-        windSpeed: mpsToMph(4.5), 
-        humidity: 55 
+      weather: {
+        windSpeed,
+        windDirDeg,
+        temp,
+        windChill: calcWindChill(temp, windSpeed),
+        pressure,
+        humidity,
+        dewPoint: calcDewPoint(temp, humidity),
+        heatIndex: calcHeatIndex(temp, humidity),
       }
     };
   }
@@ -131,15 +191,18 @@ export class SensorService {
   // hardcoded default if that specific vendor's response failed (`res.ok` check) so one dead
   // API doesn't blank out the whole dashboard. If the whole batch throws (e.g. network down),
   // the catch below falls all the way back to simulated data.
-  // Edit COMPANY_A_API / COMPANY_B_API (or add a new one) to point at your actual vendor URLs
-  // via the .env VITE_COMPANY_A_URL / VITE_COMPANY_B_URL variables.
+  // Edit COMPANY_A_API / COMPANY_B_API / WEATHER_STATION_API (or add a new one) to point at
+  // your actual vendor URLs via the .env VITE_COMPANY_A_URL / VITE_COMPANY_B_URL /
+  // VITE_WEATHER_STATION_URL variables.
   private static async fetchRealHardwareData(): Promise<SensorSnapshot> {
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 
     const COMPANY_A_API = import.meta.env.VITE_COMPANY_A_URL || "http://structural-vendor.com";
     const COMPANY_B_API = import.meta.env.VITE_COMPANY_B_URL || "http://hydro-vendor.net";
-    const WEATHER_GOV_API = "https://weather.gov";
+    // An Airmar WX-series-style ultrasonic weather station mounted on the bridge - see the
+    // SensorSnapshot.weather doc comment above for its raw vs. calculated fields.
+    const WEATHER_STATION_API = import.meta.env.VITE_WEATHER_STATION_URL || "http://weather-station-vendor.net";
 
     // A sensor type set to "CSV" mode in ingestionConfig.ts has no live push/pull API to poll
     // (that's the whole point of it - it only publishes an hourly export file, see
@@ -161,7 +224,7 @@ export class SensorService {
         fetchOrSkip(SENSOR_INGESTION.strainGauge.mode, `${COMPANY_A_API}/strain-gauges`),
         fetchOrSkip(SENSOR_INGESTION.gnss.mode, `${COMPANY_A_API}/gnss-positioning`),
         hydroNeeded ? fetch(`${COMPANY_B_API}/river-metrics`) : Promise.resolve(null),
-        fetch(WEATHER_GOV_API)
+        fetch(`${WEATHER_STATION_API}/weather-status`)
       ]);
 
       const accelData = accelRes?.ok ? await accelRes.json() : null;
@@ -170,6 +233,12 @@ export class SensorService {
       const gnssData = gnssRes?.ok ? await gnssRes.json() : null;
       const hydroData = hydroRes?.ok ? await hydroRes.json() : null;
       const weatherData = weatherRes.ok ? await weatherRes.json() : null;
+
+      const wsWindSpeed = weatherData ? parseFloat(weatherData.windSpeed) || 4.5 : 4.5;
+      const wsWindDirDeg = weatherData ? parseFloat(weatherData.windDirDeg) || 0 : 0;
+      const wsTemp = weatherData ? parseFloat(weatherData.temp) || 72 : 72;
+      const wsPressure = weatherData ? parseFloat(weatherData.pressure) || 29.92 : 29.92;
+      const wsHumidity = weatherData ? parseFloat(weatherData.humidity) || 55 : 55;
 
       return {
         timeString: timeStr,
@@ -202,11 +271,20 @@ export class SensorService {
         waveHeight: hydroData ? hydroData.waveHeightInches : 9.0,
         scour: hydroData ? [hydroData.pier1ScourInches, hydroData.pier2ScourInches] : [50.4, 50.4],
 
-        weather: weatherData ? {
-          temp: parseFloat(weatherData.properties.temperature.value) || 72,
-          windSpeed: parseFloat(weatherData.properties.windSpeed.value) || 4.5,
-          humidity: parseFloat(weatherData.properties.relativeHumidity.value) || 55
-        } : { temp: 72, windSpeed: 4.5, humidity: 55 }
+        // windChill/dewPoint/heatIndex are always calculated here from the station's raw
+        // readings (see calcWindChill/calcDewPoint/calcHeatIndex above), never read off the
+        // vendor response - the Airmar-style sensor itself only reports wind/temp/pressure/
+        // humidity.
+        weather: {
+          windSpeed: wsWindSpeed,
+          windDirDeg: wsWindDirDeg,
+          temp: wsTemp,
+          windChill: calcWindChill(wsTemp, wsWindSpeed),
+          pressure: wsPressure,
+          humidity: wsHumidity,
+          dewPoint: calcDewPoint(wsTemp, wsHumidity),
+          heatIndex: calcHeatIndex(wsTemp, wsHumidity),
+        }
       };
 
     } catch (error) {

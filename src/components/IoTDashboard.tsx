@@ -23,6 +23,7 @@ import { buildChartData, mergeChartRows } from '../Sensors/chartData';
 import { SENSOR_INGESTION } from '../Sensors/ingestionConfig';
 import { getCsvHistory, getLatestCsvRow, onCsvHistoryChanged } from '../Sensors/csvIngestion';
 import { SensorType } from '../Sensors/SensorIcons';
+import { RadarWaveWidget } from '../radargraph/RadarWaveWidget';
 
 // ============================================================================
 // 1. PASTE THE NEW SCROLL-LOCKED TOOLTIP COMPONENT RIGHT HERE:
@@ -122,7 +123,7 @@ export const IoTDashboard: React.FC = () => {
   const [data, setData] = useState(() => getSnapshots());
   // 'none' = the overview grid (3 summary cards); any other value = the single-section
   // "exploded" per-node grid triggered by clicking "Click to Explode" on a card.
-  const [expandedSection, setExpandedSection] = useState<'none' | 'accel' | 'geophone' | 'strain' | 'hydro' | 'gnss'>('none');
+  const [expandedSection, setExpandedSection] = useState<'none' | 'accel' | 'geophone' | 'strain' | 'hydro' | 'gnss' | 'weather'>('none');
 
   // Track independent timeframes for each chart section
   const [accelTimeframe, setAccelTimeframe] = useState('Real time');
@@ -133,6 +134,12 @@ export const IoTDashboard: React.FC = () => {
   const [runoffTimeframe, setRunoffTimeframe] = useState('Real time');
   const [scourTimeframe, setScourTimeframe] = useState('Real time');
   const [waveTimeframe, setWaveTimeframe] = useState('Real time');
+  const [weatherTimeframe, setWeatherTimeframe] = useState('Real time');
+  const [windSpeedTimeframe, setWindSpeedTimeframe] = useState('Real time');
+  const [tempTimeframe, setTempTimeframe] = useState('Real time');
+  const [pressureTimeframe, setPressureTimeframe] = useState('Real time');
+  const [humidityTimeframe, setHumidityTimeframe] = useState('Real time');
+  const [heatIndexTimeframe, setHeatIndexTimeframe] = useState('Real time');
 
   // Converts timeframe strings to a standard lookback boundary in milliseconds
   const getLookbackCutoff = (timeframe: string): number => {
@@ -244,7 +251,7 @@ export const IoTDashboard: React.FC = () => {
       };
       fetchHistory().catch(() => {});
     }
-  }, [accelTimeframe, geophoneTimeframe, strainTimeframe, hydroTimeframe, gnssTimeframe, runoffTimeframe, scourTimeframe, waveTimeframe]);
+  }, [accelTimeframe, geophoneTimeframe, strainTimeframe, hydroTimeframe, gnssTimeframe, runoffTimeframe, scourTimeframe, waveTimeframe, weatherTimeframe, windSpeedTimeframe, tempTimeframe, pressureTimeframe, humidityTimeframe, heatIndexTimeframe]);
 
 
   // Flattens each nested SensorSnapshot into one object per data point with keys like
@@ -282,10 +289,10 @@ export const IoTDashboard: React.FC = () => {
 
       {latest && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '20px' }}>
-          <div style={{ background: '#fff', padding: '12px', borderRadius: '6px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+          <div role="button" tabIndex={0} onClick={() => setExpandedSection('weather')} onKeyDown={(e) => e.key === 'Enter' && setExpandedSection('weather')} style={{ background: '#fff', padding: '12px', borderRadius: '6px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', cursor: 'pointer' }}>
             <div style={{ fontSize: '11px', color: '#777', textTransform: 'uppercase' }}>🌤️ Weather Station</div>
-            <div style={{ fontSize: '16px', fontWeight: 'bold', marginTop: '4px' }}>{latest.weather.temp}°F</div>
-            <div style={{ fontSize: '11px', color: '#555' }}>Wind: {latest.weather.windSpeed} mph | Hum: {latest.weather.humidity}%</div>
+            <div style={{ fontSize: '16px', fontWeight: 'bold', marginTop: '4px' }}>{latest.weather.temp}°F <span style={{ fontSize: '11px', fontWeight: 'normal', color: '#555' }}>(feels {latest.weather.heatIndex >= latest.weather.temp ? latest.weather.heatIndex : latest.weather.windChill}°F)</span></div>
+            <div style={{ fontSize: '11px', color: '#555' }}>Wind: {latest.weather.windSpeed} mph | Hum: {latest.weather.humidity}% | Baro: {latest.weather.pressure} inHg</div>
           </div>
           <div role="button" tabIndex={0} onClick={() => setExpandedSection('hydro')} onKeyDown={(e) => e.key === 'Enter' && setExpandedSection('hydro')} style={{ background: '#fff', padding: '12px', borderRadius: '6px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', cursor: 'pointer' }}>
             <div style={{ fontSize: '11px', color: '#777', textTransform: 'uppercase' }}>💧 Hydro & Scour Dynamics</div>
@@ -446,6 +453,43 @@ export const IoTDashboard: React.FC = () => {
             </div>
           </div>
 
+          {/* 5. WAVE RADAR DISPLAY - toggles between the raw PPI echo and the processed
+              directional wave spectrum (see radarprocessing/ and radargraph/). */}
+          <RadarWaveWidget />
+
+          {/* 6. WEATHER STATION SUMMARY CARD */}
+          <div style={{ background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0', position: 'relative' }}>
+            <h4 style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#2d3748' }}>
+              🌤️ Weather Station Summary {' '}
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={() => setExpandedSection('weather')}
+                onKeyDown={(e) => e.key === 'Enter' && setExpandedSection('weather')}
+                style={{ color: '#005A9C', fontSize: '11px', cursor: 'pointer', marginLeft: '4px' }}
+              >
+                🔍 Click to Explode
+              </span>
+            </h4>
+            <ChartTimeframeDropdown value={weatherTimeframe} onChange={setWeatherTimeframe} />
+            <div style={{ width: '100%', height: '180px',}}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={getFilteredChartData(weatherTimeframe)} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#edf2f7" />
+                  <XAxis dataKey="time" stroke="#718096" style={{ fontSize: '9px' }} />
+                  <YAxis stroke="#718096" style={{ fontSize: '9px' }} domain={['auto','auto']} />
+                  <Tooltip wrapperStyle={{ zIndex: 9999, pointerEvents: 'auto' }} content={<ScrollLockedTooltipContent />} />
+                  <Legend iconType="plainline" wrapperStyle={{ fontSize: '10px', paddingTop: '4px' }} />
+                  <Line name="Wind Speed (mph)" type="monotone" dataKey="windSpeed" stroke="#1890ff" dot={false} isAnimationActive={false} />
+                  <Line name="Temp (°F)" type="monotone" dataKey="temp" stroke="#fa541c" dot={false} isAnimationActive={false} />
+                  <Line name="Pressure (inHg)" type="monotone" dataKey="pressure" stroke="#722ed1" dot={false} isAnimationActive={false} />
+                  <Line name="Humidity (%)" type="monotone" dataKey="humidity" stroke="#13c2c2" dot={false} isAnimationActive={false} />
+                  <Line name="Heat Index (°F)" type="monotone" dataKey="heatIndex" stroke="#eb2f96" strokeWidth={2} dot={false} isAnimationActive={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
         </div>
       ) : (
         // Exploded mode: one small chart card per individual node (e.g. 10 separate
@@ -578,6 +622,76 @@ export const IoTDashboard: React.FC = () => {
                         <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
                         <Line name="Wave Height (in)" type="monotone" dataKey="waveHeight" stroke="#00b8d9" strokeWidth={2} dot={false} isAnimationActive={false} />
                         <Line name="WL 2 (in)" type="monotone" dataKey="waterLevel_2" stroke="#1890ff" dot={false} isAnimationActive={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {expandedSection === 'weather' && (
+              <>
+                <div style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
+                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>💨 Wind Speed</h5>
+                  <ChartTimeframeDropdown value={windSpeedTimeframe} onChange={setWindSpeedTimeframe} />
+                  <div style={{ width: '100%', height: '180px',}}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={getFilteredChartData(windSpeedTimeframe)} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
+                        <Line name="Wind Speed (mph)" type="monotone" dataKey="windSpeed" stroke="#1890ff" strokeWidth={2} dot={false} isAnimationActive={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+                <div style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
+                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🌡️ Air Temperature</h5>
+                  <ChartTimeframeDropdown value={tempTimeframe} onChange={setTempTimeframe} />
+                  <div style={{ width: '100%', height: '180px',}}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={getFilteredChartData(tempTimeframe)} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
+                        <Line name="Temp (°F)" type="monotone" dataKey="temp" stroke="#fa541c" strokeWidth={2} dot={false} isAnimationActive={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+                <div style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
+                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🧭 Barometric Pressure</h5>
+                  <ChartTimeframeDropdown value={pressureTimeframe} onChange={setPressureTimeframe} />
+                  <div style={{ width: '100%', height: '180px',}}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={getFilteredChartData(pressureTimeframe)} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
+                        <Line name="Pressure (inHg)" type="monotone" dataKey="pressure" stroke="#722ed1" strokeWidth={2} dot={false} isAnimationActive={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+                <div style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
+                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>💧 Relative Humidity</h5>
+                  <ChartTimeframeDropdown value={humidityTimeframe} onChange={setHumidityTimeframe} />
+                  <div style={{ width: '100%', height: '180px',}}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={getFilteredChartData(humidityTimeframe)} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
+                        <Line name="Humidity (%)" type="monotone" dataKey="humidity" stroke="#13c2c2" strokeWidth={2} dot={false} isAnimationActive={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+                <div style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
+                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🥵 Heat Index</h5>
+                  <ChartTimeframeDropdown value={heatIndexTimeframe} onChange={setHeatIndexTimeframe} />
+                  <div style={{ width: '100%', height: '180px',}}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={getFilteredChartData(heatIndexTimeframe)} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
+                        <Line name="Heat Index (°F)" type="monotone" dataKey="heatIndex" stroke="#eb2f96" strokeWidth={2} dot={false} isAnimationActive={false} />
                       </LineChart>
                     </ResponsiveContainer>
                   </div>

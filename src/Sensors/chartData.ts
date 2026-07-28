@@ -16,6 +16,10 @@ export function buildChartData(snapshots: readonly SensorSnapshot[]) {
     d.gnss.forEach((g, i) => { flat[`gnss_${i}_E`] = g.Easting; flat[`gnss_${i}_N`] = g.Northing; flat[`gnss_${i}_Z`] = g.Elevation; });
     flat.waterLevel_1 = d.waterLevel[0]; flat.waterLevel_2 = d.waterLevel[1];
     flat.scour_1 = d.scour[0]; flat.scour_2 = d.scour[1];
+    flat.windSpeed = d.weather.windSpeed; flat.windDirDeg = d.weather.windDirDeg;
+    flat.temp = d.weather.temp; flat.windChill = d.weather.windChill;
+    flat.pressure = d.weather.pressure; flat.humidity = d.weather.humidity;
+    flat.dewPoint = d.weather.dewPoint; flat.heatIndex = d.weather.heatIndex;
     return flat;
   });
 }
