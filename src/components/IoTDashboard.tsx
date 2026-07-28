@@ -23,7 +23,7 @@ import { buildChartData, mergeChartRows } from '../Sensors/chartData';
 import { SENSOR_INGESTION } from '../Sensors/ingestionConfig';
 import { getCsvHistory, getLatestCsvRow, onCsvHistoryChanged } from '../Sensors/csvIngestion';
 import { SensorType } from '../Sensors/SensorIcons';
-import { RadarWaveWidget } from '../radargraph/RadarWaveWidget';
+import { RadarWaveWidget } from '../radar/radargraph/RadarWaveWidget';
 
 // ============================================================================
 // 1. PASTE THE NEW SCROLL-LOCKED TOOLTIP COMPONENT RIGHT HERE:
@@ -453,8 +453,9 @@ export const IoTDashboard: React.FC = () => {
             </div>
           </div>
 
-          {/* 5. WAVE RADAR DISPLAY - toggles between the raw PPI echo and the processed
-              directional wave spectrum (see radarprocessing/ and radargraph/). */}
+          {/* 5. WAVE RADAR (Geolux LX80-O) - a live surface-elevation waveform plus the
+              derived non-directional wave energy spectrum (see radar/radarprocessing/ and
+              radar/radargraph/). Renders as two sibling cards, not one. */}
           <RadarWaveWidget />
 
           {/* 6. WEATHER STATION SUMMARY CARD */}

@@ -26,7 +26,7 @@ check. Also `IMJS_ITWIN_ID`/`IMJS_IMODEL_ID` (or pass `?iTwinId=...&iModelId=...
 — see `src/components/Routes.tsx`). Sensor-service mode is controlled by `VITE_SENSOR_MODE`
 (`SIMULATED` default, or `REAL` — see `VITE_COMPANY_A_URL`
 / `VITE_COMPANY_B_URL` for vendor endpoints); the same switch also gates the wave radar display
-(see `VITE_RADAR_VENDOR_URL`, `src/radarprocessing/radarService.ts`). See `README.md` for how to
+(see `VITE_RADAR_VENDOR_URL`, `src/radar/radarprocessing/radarService.ts`). See `README.md` for how to
 obtain OIDC/iTwin/iModel values.
 
 ## Architecture
@@ -98,33 +98,43 @@ AppUI tabs), so a marker's popup chart can appear regardless of which side tab i
 polling itself, and reuses `buildChartData`/the same field-naming convention as the popup so both
 stay in sync.
 
-### Wave radar display (`src/radarprocessing/`, `src/radargraph/`)
+### Wave radar display (`src/radar/radarprocessing/`, `src/radar/radargraph/`)
 
-A dual-view display (raw PPI echo vs. processed directional wave spectrum) rendered under the
-Hydrology Summary card in `IoTDashboard.tsx`. Split the same way the rest of this app separates
-data from rendering: `radarprocessing/` owns data/derivation, `radargraph/` only draws it. This
-unit is permanently bolted to the bridge structure (not aboard a moving vessel), so its data
-model deliberately has no heading/course/speed-over-ground fields, and it uses this app's US
-customary units (feet, mph) rather than nautical miles/m-per-s.
+Two chart cards rendered under the Hydrology Summary card in `IoTDashboard.tsx`, for a
+**Geolux LX80-O** — a fixed, non-contact microwave (Doppler) wave/tide sensor. Modeling this
+correctly matters: it has no rotating antenna (there's nothing to scan, unlike marine
+navigation radar), and being a single fixed beam it cannot resolve wave *direction* at all
+(that needs multiple sensors or a scanning array) — only period/frequency. An earlier version
+of this feature assumed a rotating PPI sweep with a directional wave-energy plot; both were
+wrong and were replaced with what's described below. Both folders live under `src/radar/` and
+are split the same way the rest of this app separates data from rendering: `radarprocessing/`
+owns data/derivation, `radargraph/` only draws it (as two plain Recharts `LineChart` cards, in
+the same visual style as every other sensor graph in the dashboard — no custom canvas drawing).
 
-- **`radarprocessing/radarTypes.ts`** — `RadarSweep` (antenna metadata + `mountingBearingDeg`,
-  the antenna's fixed as-installed compass orientation) and `WaveSpectrum` (a single-peaked
-  directional wave-energy blob: peak direction/period, spread, energy, plus wind dir/speed) —
-  the contract between the two folders.
+- **`radarprocessing/radarTypes.ts`** — `RadarWaveformSample` (one raw surface-elevation
+  reading, feet) and `WaveEnergySpectrum` (a single-peaked *non-directional* energy-vs-period
+  curve: peak period/spread/energy) — the contract between the two folders.
 - **`radarprocessing/radarService.ts`** — mirrors `SensorService.ts`'s `getMode()` split
   exactly: `VITE_SENSOR_MODE=REAL` calls `VITE_RADAR_VENDOR_URL`'s `/wave-radar-status`
   endpoint (per-field fallback, whole-batch fallback to simulated on failure); this is the
-  integration point for a real radar box — point the env var at it, no code changes needed as
+  integration point for a real LX80-O — point the env var at it, no code changes needed as
   long as the vendor returns the flat JSON shape documented in that file.
-- **`radarprocessing/radarEchoSimulator.ts`** / **`waveSpectrumProcessor.ts`** — SIMULATED-mode
-  fabrication; the wave spectrum's period/energy scale off the `waveRadar` sensor's current
-  `waveHeight` (`SensorService.ts`) so it isn't disconnected from the rest of the dashboard.
-- **`radarprocessing/radarDataStore.ts`** — eager-singleton polling loop (2s, roughly one
-  antenna rotation) through `RadarService`, same `BeEvent` pattern as `sensorDataStore.ts`.
-- **`radargraph/RadarEchoCanvas.tsx`** / **`WaveSpectrumCanvas.tsx`** — Canvas-based polar
-  renders (compass-oriented: 0°=North=up, clockwise) via shared helpers in
-  **`polarCanvasUtils.ts`**. `RadarWaveWidget.tsx` is the card with the echo/spectrum toggle,
-  mounted directly in `IoTDashboard.tsx`.
+- **`radarprocessing/radarWaveformSimulator.ts`** / **`waveSpectrumProcessor.ts`** —
+  SIMULATED-mode fabrication; the spectrum's period/energy scale off the `waveRadar` sensor's
+  current `waveHeight` (`SensorService.ts`), and the waveform's oscillation period is driven by
+  the spectrum's `peakPeriodSec` (both generated from one shared timestamp per tick in
+  `radarService.ts`, so they always describe the same "sea state" instant) — so this isn't
+  disconnected from the rest of the dashboard's hydrology data.
+- **`radarprocessing/radarDataStore.ts`** — eager-singleton polling loop (1Hz, same cadence as
+  `sensorDataStore.ts`) accumulating a `RadarWaveformSample` history (capped, same pattern as
+  `sensorDataStore.ts`'s snapshot buffer) plus the latest spectrum, same `BeEvent` pattern.
+- **`radargraph/RadarWaveWidget.tsx`** — renders two sibling cards (not a toggle): "Wave Radar
+  Signal" is a live time-series of `surfaceElevationFeet` with the same
+  `ChartTimeframeDropdown` + `LineChart` layout as other sensor graphs (a local copy of that
+  dropdown lives in this file to avoid a circular import with `IoTDashboard.tsx`); "Wave Energy
+  Spectrum" samples the Gaussian curve at many period points and charts energy vs. period — its
+  X-axis is period, not time, so (unlike every other chart here) a timeframe dropdown doesn't
+  apply and is intentionally omitted.
 
 ### Adding a new sensor
 
