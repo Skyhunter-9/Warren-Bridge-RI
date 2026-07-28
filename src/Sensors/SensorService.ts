@@ -18,8 +18,13 @@ export interface SensorSnapshot {
   geophones: { x: number; y: number; z: number }[];
   strainGauges: number[];
   gnss: { Easting: number; Northing: number; Elevation: number }[];
+  // Index 0 is co-located with the water velocity sensor, index 1 with the wave radar
+  // sensor - see chartData.ts's getSensorSeries(), which pairs each with its own water level
+  // reading the same way accelerometer/geophone are paired.
   waterLevel: number[];
   waterVelocity: number;
+  // Significant wave height from a radar wave gauge, co-located with waterLevel[1].
+  waveHeight: number;
   scour: number[];
   weather: { temp: number; windSpeed: number; humidity: number };
 }
@@ -101,6 +106,7 @@ export class SensorService {
         parseFloat((184.8 + Math.cos(t / 20000) * 6).toFixed(2))
       ],
       waterVelocity: mpsToMph(1.2 + Math.sin(t / 4000) * 0.3),
+      waveHeight: parseFloat((9 + Math.sin(t / 7000) * 4).toFixed(2)),
       scour: [
         parseFloat((50.4 + Math.cos(t / 15000) * 2).toFixed(2)), 
         parseFloat((50.4 + Math.sin(t / 15000) * 2).toFixed(2))
@@ -172,6 +178,7 @@ export class SensorService {
 
         waterLevel: hydroData ? [hydroData.upstreamSensor, hydroData.downstreamSensor] : [184.8, 184.8],
         waterVelocity: hydroData ? hydroData.flowVelocityMph : 1.2,
+        waveHeight: hydroData ? hydroData.waveHeightInches : 9.0,
         scour: hydroData ? [hydroData.pier1ScourInches, hydroData.pier2ScourInches] : [50.4, 50.4],
 
         weather: weatherData ? {

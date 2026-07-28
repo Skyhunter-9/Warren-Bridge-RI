@@ -9,7 +9,7 @@ import { SensorType } from "./SensorIcons";
  */
 export function buildChartData(snapshots: readonly SensorSnapshot[]) {
   return snapshots.map((d) => {
-    const flat: any = { time: d.timeString, waterVelocity: d.waterVelocity };
+    const flat: any = { time: d.timeString, waterVelocity: d.waterVelocity, waveHeight: d.waveHeight };
     d.accelerometers.forEach((acc, i) => { flat[`acc_${i}_X`] = acc.x; flat[`acc_${i}_Y`] = acc.y; flat[`acc_${i}_Z`] = acc.z; });
     d.geophones.forEach((geo, i) => { flat[`geo_${i}_X`] = geo.x; flat[`geo_${i}_Y`] = geo.y; flat[`geo_${i}_Z`] = geo.z; });
     d.strainGauges.forEach((sg, i) => { flat[`sg_${i}`] = sg; });
@@ -44,6 +44,20 @@ function geophoneSeries(nodeIndex: number): SensorSeriesDef {
       { dataKey: `geo_${nodeIndex}_Y`, name: "Y-Axis", color: "#faad14" },
       { dataKey: `geo_${nodeIndex}_Z`, name: "Z-Axis", color: "#1890ff" },
     ],
+  };
+}
+
+/** Every water level reading is co-located with (and shares a nodeIndex with) either the
+ * water velocity sensor (index 0) or the wave radar sensor (index 1) - see
+ * SensorService.ts's SensorSnapshot.waterLevel. Factored out the same way geophoneSeries is,
+ * so it can be appended whenever waterVelocity/waveRadar's series is requested below. Not its
+ * own SensorType/marker - like geophone, it's purely a paired reading, not something you'd
+ * click on directly in the 3D view. */
+function waterLevelSeries(nodeIndex: number): SensorSeriesDef {
+  return {
+    title: `Water Level Sensor ${nodeIndex + 1}`,
+    unit: "in",
+    lines: [{ dataKey: `waterLevel_${nodeIndex + 1}`, name: `WL ${nodeIndex + 1}`, color: "#096dd9" }],
   };
 }
 
@@ -89,19 +103,28 @@ export function getSensorSeries(sensorType: SensorType, nodeIndex: number): Sens
           { dataKey: `gnss_${nodeIndex}_Z`, name: "Z", color: "#722ed1" },
         ],
       }];
-    case "waterLevel":
-      return [{
-        title: `Water Level Sensor ${nodeIndex + 1}`,
-        unit: "in",
-        lines: [{ dataKey: `waterLevel_${nodeIndex + 1}`, name: `WL ${nodeIndex + 1}`, color: "#096dd9" }],
-      }];
     case "waterVelocity":
-      // Only one field exists (no per-node array) - every waterVelocity marker shows the same series.
-      return [{
-        title: "Water Velocity Sensor",
-        unit: "mph",
-        lines: [{ dataKey: "waterVelocity", name: "Velocity", color: "#fa8c16" }],
-      }];
+      // Only one field exists (no per-node array) - every waterVelocity marker shows the same
+      // series. Paired with waterLevel[0] - see waterLevelSeries above.
+      return [
+        {
+          title: "Water Velocity Sensor",
+          unit: "mph",
+          lines: [{ dataKey: "waterVelocity", name: "Velocity", color: "#fa8c16" }],
+        },
+        waterLevelSeries(0),
+      ];
+    case "waveRadar":
+      // Only one field exists (no per-node array) - every waveRadar marker shows the same
+      // series. Paired with waterLevel[1] - see waterLevelSeries above.
+      return [
+        {
+          title: "Wave Radar Sensor",
+          unit: "in",
+          lines: [{ dataKey: "waveHeight", name: "Wave Height", color: "#00b8d9" }],
+        },
+        waterLevelSeries(1),
+      ];
     case "scour":
       return [{
         title: `Scour Sensor ${nodeIndex + 1}`,

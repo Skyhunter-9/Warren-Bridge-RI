@@ -6,8 +6,8 @@ export type SensorType =
   | "gnss"
   | "accelerometer"
   | "strainGauge"
-  | "waterLevel"
   | "waterVelocity"
+  | "waveRadar"
   | "scour";
 
 /**
@@ -125,19 +125,26 @@ export const SENSOR_GROUPS: SensorGroup[] = [
     ],
   },
   {
-    type: "waterLevel",
-    label: "Water Level",
-    color: "#33ccff",
-    iconUrl: "/icons/sensor-lightblue.svg",
-    expectedCount: 1,
-    elementIds: [],
-  },
-  {
+    // Co-located with waterLevel[0] - see SensorService.ts's SensorSnapshot.waterLevel and
+    // chartData.ts's getSensorSeries(), which pops both readings up together on click.
     type: "waterVelocity",
     label: "Water Velocity",
     color: "#003399",
     iconUrl: "/icons/sensor-darkblue.svg",
     expectedCount: 1,
+    // TODO: add this sensor's mount element Hex ID here (Developer Tab).
+    elementIds: [],
+  },
+  {
+    // Co-located with waterLevel[1] - see SensorService.ts's SensorSnapshot.waterLevel and
+    // chartData.ts's getSensorSeries(), which pops both readings up together on click. Reuses
+    // the color/icon freed up by removing the standalone waterLevel marker group above.
+    type: "waveRadar",
+    label: "Wave Radar",
+    color: "#33ccff",
+    iconUrl: "/icons/sensor-lightblue.svg",
+    expectedCount: 1,
+    // TODO: add this sensor's mount element Hex ID here (Developer Tab).
     elementIds: [],
   },
   {

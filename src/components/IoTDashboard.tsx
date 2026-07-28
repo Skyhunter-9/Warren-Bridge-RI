@@ -129,6 +129,7 @@ export const IoTDashboard: React.FC = () => {
   const [gnssTimeframe, setGnssTimeframe] = useState('Real time');
   const [runoffTimeframe, setRunoffTimeframe] = useState('Real time');
   const [scourTimeframe, setScourTimeframe] = useState('Real time');
+  const [waveTimeframe, setWaveTimeframe] = useState('Real time');
 
   // Converts timeframe strings to a standard lookback boundary in milliseconds
   const getLookbackCutoff = (timeframe: string): number => {
@@ -200,7 +201,7 @@ export const IoTDashboard: React.FC = () => {
       };
       fetchHistory().catch(() => {});
     }
-  }, [accelTimeframe, geophoneTimeframe, strainTimeframe, hydroTimeframe, gnssTimeframe, runoffTimeframe, scourTimeframe]);
+  }, [accelTimeframe, geophoneTimeframe, strainTimeframe, hydroTimeframe, gnssTimeframe, runoffTimeframe, scourTimeframe, waveTimeframe]);
 
 
   // Flattens each nested SensorSnapshot into one object per data point with keys like
@@ -235,7 +236,7 @@ export const IoTDashboard: React.FC = () => {
           </div>
           <div role="button" tabIndex={0} onClick={() => setExpandedSection('hydro')} onKeyDown={(e) => e.key === 'Enter' && setExpandedSection('hydro')} style={{ background: '#fff', padding: '12px', borderRadius: '6px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', cursor: 'pointer' }}>
             <div style={{ fontSize: '11px', color: '#777', textTransform: 'uppercase' }}>💧 Hydro & Scour Dynamics</div>
-            <div style={{ fontSize: '15px', fontWeight: 'bold', marginTop: '4px' }}>Vel: {latest.waterVelocity} mph</div>
+            <div style={{ fontSize: '15px', fontWeight: 'bold', marginTop: '4px' }}>Vel: {latest.waterVelocity} mph | Wave: {latest.waveHeight} in</div>
             <div style={{ fontSize: '11px', color: '#555' }}>WL1: {latest.waterLevel[0]} in | Scour1: {latest.scour[0]} in</div>
           </div>
           <div role="button" tabIndex={0} onClick={() => setExpandedSection('gnss')} onKeyDown={(e) => e.key === 'Enter' && setExpandedSection('gnss')} style={{ background: '#fff', padding: '12px', borderRadius: '6px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', cursor: 'pointer' }}>
@@ -382,6 +383,7 @@ export const IoTDashboard: React.FC = () => {
                   <Line name="Scour Pier 1" type="monotone" dataKey="scour_1" stroke="#722ed1" dot={false} isAnimationActive={false} />
                   <Line name="Scour Pier 2" type="monotone" dataKey="scour_2" stroke="#eb2f96" strokeDasharray="3 3" dot={false} isAnimationActive={false} />
                   <Line name="Stream Velocity" type="monotone" dataKey="waterVelocity" stroke="#fa8c16" strokeWidth={2} dot={false} isAnimationActive={false} />
+                  <Line name="Wave Height" type="monotone" dataKey="waveHeight" stroke="#00b8d9" strokeWidth={2} dot={false} isAnimationActive={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -505,6 +507,20 @@ export const IoTDashboard: React.FC = () => {
                         <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
                         <Line name="Pier 1 Scour" type="monotone" dataKey="scour_1" stroke="#722ed1" dot={false} isAnimationActive={false} />
                         <Line name="Pier 2 Scour" type="monotone" dataKey="scour_2" stroke="#eb2f96" dot={false} isAnimationActive={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+                <div style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
+                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>📡 Wave Profile (Radar)</h5>
+                  <ChartTimeframeDropdown value={waveTimeframe} onChange={setWaveTimeframe} />
+                  <div style={{ width: '100%', height: '180px',}}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={getFilteredChartData(waveTimeframe)} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
+                        <Line name="Wave Height (in)" type="monotone" dataKey="waveHeight" stroke="#00b8d9" strokeWidth={2} dot={false} isAnimationActive={false} />
+                        <Line name="WL 2 (in)" type="monotone" dataKey="waterLevel_2" stroke="#1890ff" dot={false} isAnimationActive={false} />
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
