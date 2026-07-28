@@ -9,7 +9,7 @@ import { SensorType } from "./SensorIcons";
  */
 export function buildChartData(snapshots: readonly SensorSnapshot[]) {
   return snapshots.map((d) => {
-    const flat: any = { time: d.timeString, waterVelocity: d.waterVelocity, waveHeight: d.waveHeight };
+    const flat: any = { time: d.timeString, timestamp: d.timestamp, waterVelocity: d.waterVelocity, waveHeight: d.waveHeight };
     d.accelerometers.forEach((acc, i) => { flat[`acc_${i}_X`] = acc.x; flat[`acc_${i}_Y`] = acc.y; flat[`acc_${i}_Z`] = acc.z; });
     d.geophones.forEach((geo, i) => { flat[`geo_${i}_X`] = geo.x; flat[`geo_${i}_Y`] = geo.y; flat[`geo_${i}_Z`] = geo.z; });
     d.strainGauges.forEach((sg, i) => { flat[`sg_${i}`] = sg; });
@@ -18,6 +18,19 @@ export function buildChartData(snapshots: readonly SensorSnapshot[]) {
     flat.scour_1 = d.scour[0]; flat.scour_2 = d.scour[1];
     return flat;
   });
+}
+
+/**
+ * Combines the live 1Hz buffer's flat rows with one or more CSV-sourced flat row arrays
+ * (csvIngestion.ts's getCsvHistory) into a single array a Recharts <LineChart> can read,
+ * ordered by `timestamp`. Used whenever a chart card mixes an API-mode line with a CSV-mode
+ * line (or is CSV-only) - see IoTDashboard.tsx and SensorGraphPopup.tsx. Rows are kept as
+ * separate entries rather than merged into one row per exact timestamp, since live and CSV
+ * data essentially never land on the same instant - each <Line> just has a gap wherever its
+ * own dataKey is missing on a given row, which Recharts renders fine.
+ */
+export function mergeChartRows(...rowGroups: Array<ReadonlyArray<Record<string, any>>>): Record<string, any>[] {
+  return rowGroups.flat().sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
 }
 
 export interface SensorSeriesLine {

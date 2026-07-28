@@ -8,9 +8,15 @@
 // NOTE: VITE_SENSOR_MODE / VITE_COMPANY_A_URL / VITE_COMPANY_B_URL are read via
 // import.meta.env but are not declared in vite-env.d.ts, so TypeScript treats them as `any`.
 
+import { SENSOR_INGESTION } from "./ingestionConfig";
+
 // 1. Define the full data structure interface
 export interface SensorSnapshot {
   timeString: string;
+  // Epoch ms this snapshot was generated/fetched at - lets chartData.ts's mergeChartRows sort
+  // this live buffer alongside CSV-sourced history (csvIngestion.ts), which has its own
+  // independent, non-1Hz timestamps.
+  timestamp: number;
   accelerometers: { x: number; y: number; z: number }[];
   // Triaxial, one geophone co-located with each accelerometer node (same count/order) - see
   // chartData.ts's getSensorSeries(), which pairs the two by nodeIndex so clicking an
@@ -85,6 +91,7 @@ export class SensorService {
 
     return {
       timeString: timeStr,
+      timestamp: t,
       accelerometers: Array.from({ length: 10 }, (_, i) => ({
         x: mGToIn(Math.sin(t / 1000 + i) * 15 + 5),
         y: mGToIn(Math.cos(t / 800 + i) * 12 + 5),
@@ -134,25 +141,39 @@ export class SensorService {
     const COMPANY_B_API = import.meta.env.VITE_COMPANY_B_URL || "http://hydro-vendor.net";
     const WEATHER_GOV_API = "https://weather.gov";
 
+    // A sensor type set to "CSV" mode in ingestionConfig.ts has no live push/pull API to poll
+    // (that's the whole point of it - it only publishes an hourly export file, see
+    // csvIngestion.ts) - so its request is skipped here entirely rather than hitting a vendor
+    // endpoint for data nothing will use. Structural types (accel/geo/strain/gnss) each have
+    // their own vendor request, so they gate independently; the hydro types share one bundled
+    // endpoint, so it's only skipped if ALL THREE are CSV-mode.
+    const fetchOrSkip = async (mode: "API" | "CSV", url: string): Promise<Response | null> =>
+      mode === "API" ? fetch(url) : null;
+    const hydroNeeded =
+      SENSOR_INGESTION.waterVelocity.mode === "API" ||
+      SENSOR_INGESTION.waveRadar.mode === "API" ||
+      SENSOR_INGESTION.scour.mode === "API";
+
     try {
       const [accelRes, geoRes, strainRes, gnssRes, hydroRes, weatherRes] = await Promise.all([
-        fetch(`${COMPANY_A_API}/accelerometers`),
-        fetch(`${COMPANY_A_API}/geophones`),
-        fetch(`${COMPANY_A_API}/strain-gauges`),
-        fetch(`${COMPANY_A_API}/gnss-positioning`),
-        fetch(`${COMPANY_B_API}/river-metrics`),
+        fetchOrSkip(SENSOR_INGESTION.accelerometer.mode, `${COMPANY_A_API}/accelerometers`),
+        fetchOrSkip(SENSOR_INGESTION.accelerometer.mode, `${COMPANY_A_API}/geophones`),
+        fetchOrSkip(SENSOR_INGESTION.strainGauge.mode, `${COMPANY_A_API}/strain-gauges`),
+        fetchOrSkip(SENSOR_INGESTION.gnss.mode, `${COMPANY_A_API}/gnss-positioning`),
+        hydroNeeded ? fetch(`${COMPANY_B_API}/river-metrics`) : Promise.resolve(null),
         fetch(WEATHER_GOV_API)
       ]);
 
-      const accelData = accelRes.ok ? await accelRes.json() : null;
-      const geoData = geoRes.ok ? await geoRes.json() : null;
-      const strainData = strainRes.ok ? await strainRes.json() : null;
-      const gnssData = gnssRes.ok ? await gnssRes.json() : null;
-      const hydroData = hydroRes.ok ? await hydroRes.json() : null;
+      const accelData = accelRes?.ok ? await accelRes.json() : null;
+      const geoData = geoRes?.ok ? await geoRes.json() : null;
+      const strainData = strainRes?.ok ? await strainRes.json() : null;
+      const gnssData = gnssRes?.ok ? await gnssRes.json() : null;
+      const hydroData = hydroRes?.ok ? await hydroRes.json() : null;
       const weatherData = weatherRes.ok ? await weatherRes.json() : null;
 
       return {
         timeString: timeStr,
+        timestamp: now.getTime(),
 
         accelerometers: accelData ? accelData.map((device: any) => ({
           x: device.x,

@@ -2,7 +2,9 @@ import React, { useEffect, useMemo, useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { onSensorGraphRequested, SensorGraphRequest } from "./sensorGraphRequest";
 import { getSnapshots, onSnapshotsChanged } from "./sensorDataStore";
-import { buildChartData, getSensorSeries } from "./chartData";
+import { buildChartData, getSensorSeries, mergeChartRows } from "./chartData";
+import { SENSOR_INGESTION } from "./ingestionConfig";
+import { getCsvHistory, onCsvHistoryChanged } from "./csvIngestion";
 
 // Mounted once, permanently, in App.tsx (as a sibling of <Viewer>, not one of the AppUI side
 // tabs) so it can pop up regardless of which tab is currently open. Listens for
@@ -24,6 +26,16 @@ export function SensorGraphPopup() {
     return onSnapshotsChanged.addListener(() => setTick((t) => t + 1));
   }, [request]);
 
+  // Same idea as the listener above, but for csvIngestion.ts's separate hourly-download data
+  // path - a CSV-mode sensor's popup should redraw as soon as a new file lands, not just once
+  // per live poll (which carries no data for it - see ingestionConfig.ts).
+  useEffect(() => {
+    if (!request) return;
+    return onCsvHistoryChanged.addListener((type) => {
+      if (type === request.sensorType) setTick((t) => t + 1);
+    });
+  }, [request]);
+
   // An array, not a single series, because some sensors are paired (e.g. an accelerometer
   // marker's click also shows its co-located geophone reading - see chartData.ts's
   // getSensorSeries for the pairing).
@@ -33,14 +45,22 @@ export function SensorGraphPopup() {
   );
 
   // Only the most recent 45 points (~45 seconds), matching the "Real time" default window
-  // used elsewhere in IoTDashboard.tsx. `request`/`tick` aren't read inside the callback -
-  // getSnapshots() reads external mutable state - but they're what should trigger a
-  // recompute (a new request, or the store ticking forward), so they're deliberately kept
-  // as deps despite the lint rule not being able to see that.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const chartData = useMemo(() => buildChartData(getSnapshots()).slice(-45), [request, tick]);
+  // used elsewhere in IoTDashboard.tsx - plus, if this sensor type is in CSV mode (see
+  // ingestionConfig.ts), every downloaded CSV row too, since that data never lands in the
+  // live 1Hz buffer at all (csvIngestion.ts) and would otherwise never show up here.
+  // `tick` isn't read inside the callback - getSnapshots()/getCsvHistory() read external
+  // mutable state - but it's what should trigger a recompute (a live poll or CSV download),
+  // so it's deliberately kept as a dep despite the lint rule not being able to see that.
+  const chartData = useMemo(() => {
+    const liveRows = buildChartData(getSnapshots()).slice(-45);
+    if (!request || SENSOR_INGESTION[request.sensorType].mode !== "CSV") return liveRows;
+    return mergeChartRows(liveRows, getCsvHistory(request.sensorType));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request, tick]);
 
   if (!request || !seriesList || seriesList.length === 0) return null;
+
+  const isCsvSensor = SENSOR_INGESTION[request.sensorType].mode === "CSV";
 
   return (
     <div
@@ -79,7 +99,14 @@ export function SensorGraphPopup() {
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-          <span style={{ fontSize: "11px", opacity: 0.6 }}>{request.elementId}</span>
+          <span style={{ fontSize: "11px", opacity: 0.6 }}>
+            {request.elementId}
+            {isCsvSensor && (
+              <span style={{ marginLeft: "8px", fontSize: "10px", color: "#8c6d1f", background: "#fff7e0", border: "1px solid #f0d989", borderRadius: "3px", padding: "1px 5px" }}>
+                📄 CSV (hourly) - updates on new file, not live
+              </span>
+            )}
+          </span>
           <button
             type="button"
             onClick={() => setRequest(undefined)}

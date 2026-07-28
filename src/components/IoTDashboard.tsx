@@ -19,7 +19,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import SensorService from '../Sensors/SensorService';
 import { getSnapshots, onSnapshotsChanged, replaceSnapshots } from '../Sensors/sensorDataStore';
-import { buildChartData } from '../Sensors/chartData';
+import { buildChartData, mergeChartRows } from '../Sensors/chartData';
+import { SENSOR_INGESTION } from '../Sensors/ingestionConfig';
+import { getCsvHistory, getLatestCsvRow, onCsvHistoryChanged } from '../Sensors/csvIngestion';
+import { SensorType } from '../Sensors/SensorIcons';
 
 // ============================================================================
 // 1. PASTE THE NEW SCROLL-LOCKED TOOLTIP COMPONENT RIGHT HERE:
@@ -164,12 +167,52 @@ export const IoTDashboard: React.FC = () => {
     return chartData.slice(-secondsOfHistory);
   };
 
+  // Merges the live buffer with any CSV-mode sensor types' downloaded history (see
+  // csvIngestion.ts) into one Recharts-ready array, filtered to the same lookback window as
+  // the live-only path above. Types still in API mode contribute nothing extra here (their
+  // data is already in `chartData`/getFilteredChartData), so this is a safe drop-in
+  // replacement for getFilteredChartData on any card that might include a CSV-mode line.
+  const getMergedChartData = (timeframe: string, types: SensorType[]) => {
+    const csvTypes = types.filter((t) => SENSOR_INGESTION[t].mode === "CSV");
+    if (csvTypes.length === 0) return getFilteredChartData(timeframe);
+
+    const cutoff = getLookbackCutoff(timeframe);
+    const csvRows = csvTypes.flatMap((t) => getCsvHistory(t).filter((r) => r.timestamp >= cutoff));
+    return mergeChartRows(getFilteredChartData(timeframe), csvRows);
+  };
+
+  // Reads a sensor type's most recently downloaded CSV value for `key` (falling back to the
+  // live snapshot's value if that type is in API mode, or if no CSV has landed yet) - used by
+  // the summary tiles above, which otherwise read straight off the 1Hz `latest` snapshot.
+  const getLatestValue = (type: SensorType, key: string, fallback: number): number => {
+    if (SENSOR_INGESTION[type].mode !== "CSV") return fallback;
+    const value = getLatestCsvRow(type)?.[key];
+    return typeof value === "number" ? value : fallback;
+  };
+
+  // null when every listed type is in (the default) API mode, so the common case shows no
+  // badge at all - only sensors actually switched to CSV in ingestionConfig.ts get flagged.
+  const modeLabel = (types: SensorType[]): string | null => {
+    const modes = new Set(types.map((t) => SENSOR_INGESTION[t].mode));
+    if (modes.size === 1 && modes.has("API")) return null;
+    return modes.size === 1 ? "📄 CSV (hourly)" : "📄+🔌 Mixed";
+  };
+
+  const modeBadgeStyle: React.CSSProperties = { fontSize: '10px', fontWeight: 'normal', color: '#8c6d1f', background: '#fff7e0', border: '1px solid #f0d989', borderRadius: '3px', padding: '1px 5px', marginLeft: '6px' };
 
   // Mirrors the shared sensorDataStore buffer into local state whenever it changes (new poll,
   // or a historical replace below) - the actual polling loop lives in sensorDataStore.ts, not
   // here, so it keeps running even while this tab isn't mounted.
   useEffect(() => {
     return onSnapshotsChanged.addListener(() => setData(getSnapshots()));
+  }, []);
+
+  // Forces a re-render whenever any CSV-mode sensor type's history changes (new hourly
+  // download merged in) - mirrors the onSnapshotsChanged listener above, but for
+  // csvIngestion.ts's separate, non-1Hz data path.
+  const [, setCsvTick] = useState(0);
+  useEffect(() => {
+    return onCsvHistoryChanged.addListener(() => setCsvTick((t) => t + 1));
   }, []);
 
   // ======= Timeframe Trigger for real vs simulated data =======
@@ -216,6 +259,16 @@ export const IoTDashboard: React.FC = () => {
   // geophone nodes or 9 strain gauges a distinct, repeatable line color.
   const colors = ['#ff4d4f', '#faad14', '#13c2c2', '#52c41a', '#1890ff', '#722ed1', '#eb2f96', '#2f54eb', '#fa8c16', '#a0d911'];
 
+  // Per-card ingestion-mode badges (see modeLabel above) - computed once per render so both
+  // the overview cards and their exploded-view counterparts can share the same label.
+  const accelMode = modeLabel(['accelerometer']);
+  const strainMode = modeLabel(['strainGauge']);
+  const gnssMode = modeLabel(['gnss']);
+  const hydroMode = modeLabel(['waterVelocity', 'waveRadar', 'scour']);
+  const runoffMode = modeLabel(['waterVelocity']);
+  const scourCardMode = modeLabel(['scour']);
+  const waveMode = modeLabel(['waveRadar']);
+
   return (
     <div style={{ padding: '16px', height: '100%', boxSizing: 'border-box', backgroundColor: '#f4f6f9', color: '#333333', overflowY: 'auto', fontFamily: 'sans-serif' }}>
       
@@ -236,8 +289,8 @@ export const IoTDashboard: React.FC = () => {
           </div>
           <div role="button" tabIndex={0} onClick={() => setExpandedSection('hydro')} onKeyDown={(e) => e.key === 'Enter' && setExpandedSection('hydro')} style={{ background: '#fff', padding: '12px', borderRadius: '6px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', cursor: 'pointer' }}>
             <div style={{ fontSize: '11px', color: '#777', textTransform: 'uppercase' }}>💧 Hydro & Scour Dynamics</div>
-            <div style={{ fontSize: '15px', fontWeight: 'bold', marginTop: '4px' }}>Vel: {latest.waterVelocity} mph | Wave: {latest.waveHeight} in</div>
-            <div style={{ fontSize: '11px', color: '#555' }}>WL1: {latest.waterLevel[0]} in | Scour1: {latest.scour[0]} in</div>
+            <div style={{ fontSize: '15px', fontWeight: 'bold', marginTop: '4px' }}>Vel: {getLatestValue('waterVelocity', 'waterVelocity', latest.waterVelocity)} mph | Wave: {getLatestValue('waveRadar', 'waveHeight', latest.waveHeight)} in</div>
+            <div style={{ fontSize: '11px', color: '#555' }}>WL1: {getLatestValue('waterVelocity', 'waterLevel_1', latest.waterLevel[0])} in | Scour1: {getLatestValue('scour', 'scour_1', latest.scour[0])} in</div>
           </div>
           <div role="button" tabIndex={0} onClick={() => setExpandedSection('gnss')} onKeyDown={(e) => e.key === 'Enter' && setExpandedSection('gnss')} style={{ background: '#fff', padding: '12px', borderRadius: '6px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', cursor: 'pointer' }}>
             <div style={{ fontSize: '11px', color: '#777', textTransform: 'uppercase' }}>🛰️ GNSS Displacement (6 Nodes)</div>
@@ -257,20 +310,21 @@ export const IoTDashboard: React.FC = () => {
           <div style={{ background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0', position: 'relative' }}>
             <h4 style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#2d3748' }}>
               🔊 Accel Array (All 10 Nodes){' '}
-              <span 
+              <span
                 role="button"
                 tabIndex={0}
-                onClick={() => setExpandedSection('accel')} 
+                onClick={() => setExpandedSection('accel')}
                 onKeyDown={(e) => e.key === 'Enter' && setExpandedSection('accel')}
                 style={{ color: '#005A9C', fontSize: '11px', cursor: 'pointer', marginLeft: '4px' }}
               >
                 🔍 Click to Explode
               </span>
+              {accelMode && <span style={modeBadgeStyle}>{accelMode}</span>}
             </h4>
             <ChartTimeframeDropdown value={accelTimeframe} onChange={setAccelTimeframe} />
             <div style={{ width: '100%', height: '180px',}}>
               <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={getFilteredChartData(accelTimeframe)} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                  <LineChart data={getMergedChartData(accelTimeframe, ['accelerometer'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#edf2f7" />
                   <XAxis dataKey="time" stroke="#718096" style={{ fontSize: '9px' }} />
                   <YAxis stroke="#718096" style={{ fontSize: '9px' }} domain={['auto','auto']} />
@@ -302,11 +356,12 @@ export const IoTDashboard: React.FC = () => {
               >
                 🔍 Click to Explode
               </span>
+              {accelMode && <span style={modeBadgeStyle}>{accelMode}</span>}
             </h4>
             <ChartTimeframeDropdown value={geophoneTimeframe} onChange={setGeophoneTimeframe} />
             <div style={{ width: '100%', height: '180px',}}>
               <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={getFilteredChartData(geophoneTimeframe)} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                  <LineChart data={getMergedChartData(geophoneTimeframe, ['accelerometer'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#edf2f7" />
                   <XAxis dataKey="time" stroke="#718096" style={{ fontSize: '9px' }} />
                   <YAxis stroke="#718096" style={{ fontSize: '9px' }} domain={['auto','auto']} />
@@ -328,20 +383,21 @@ export const IoTDashboard: React.FC = () => {
           <div style={{ background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0', position: 'relative' }}>
             <h4 style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#2d3748' }}>
               📐 Strain Gauge Matrix (All 9 Channels){' '}
-              <span 
+              <span
                 role="button"
                 tabIndex={0}
-                onClick={() => setExpandedSection('strain')} 
+                onClick={() => setExpandedSection('strain')}
                 onKeyDown={(e) => e.key === 'Enter' && setExpandedSection('strain')}
                 style={{ color: '#005A9C', fontSize: '11px', cursor: 'pointer', marginLeft: '4px' }}
               >
                 🔍 Click to Explode
               </span>
+              {strainMode && <span style={modeBadgeStyle}>{strainMode}</span>}
             </h4>
             <ChartTimeframeDropdown value={strainTimeframe} onChange={setStrainTimeframe} />
             <div style={{ width: '100%', height: '180px',}}>
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={getFilteredChartData(strainTimeframe)} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                <LineChart data={getMergedChartData(strainTimeframe, ['strainGauge'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#edf2f7" />
                   <XAxis dataKey="time" stroke="#718096" style={{ fontSize: '9px' }} />
                   <YAxis stroke="#718096" style={{ fontSize: '9px' }} domain={['auto','auto']} />
@@ -359,20 +415,21 @@ export const IoTDashboard: React.FC = () => {
           <div style={{ background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0', position: 'relative' }}>
             <h4 style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#2d3748' }}>
               🌊 Hydrology Summary {' '}
-              <span 
+              <span
                 role="button"
                 tabIndex={0}
-                onClick={() => setExpandedSection('hydro')} 
+                onClick={() => setExpandedSection('hydro')}
                 onKeyDown={(e) => e.key === 'Enter' && setExpandedSection('hydro')}
                 style={{ color: '#005A9C', fontSize: '11px', cursor: 'pointer', marginLeft: '4px' }}
               >
                 🔍 Click to Explode
               </span>
+              {hydroMode && <span style={modeBadgeStyle}>{hydroMode}</span>}
             </h4>
             <ChartTimeframeDropdown value={hydroTimeframe} onChange={setHydroTimeframe} />
             <div style={{ width: '100%', height: '180px',}}>
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={getFilteredChartData(hydroTimeframe)} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                <LineChart data={getMergedChartData(hydroTimeframe, ['waterVelocity', 'waveRadar', 'scour'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#edf2f7" />
                   <XAxis dataKey="time" stroke="#718096" style={{ fontSize: '9px' }} />
                   <YAxis stroke="#718096" style={{ fontSize: '9px' }} domain={['auto','auto']} />
@@ -400,11 +457,11 @@ export const IoTDashboard: React.FC = () => {
             
             {expandedSection === 'accel' && Array.from({ length: 10 }).map((_, i) => (
               <div key={i} style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
-                <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🔊 Accel Node {i + 1} (in/s²)</h5>
+                <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🔊 Accel Node {i + 1} (in/s²) {accelMode && <span style={modeBadgeStyle}>{accelMode}</span>}</h5>
                  <ChartTimeframeDropdown value={accelTimeframe} onChange={setAccelTimeframe} />
                   <div style={{ width: '100%', height: '180px',}}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={getFilteredChartData(accelTimeframe)} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                    <LineChart data={getMergedChartData(accelTimeframe, ['accelerometer'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                       <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
                       <Line name="X-Axis" type="monotone" dataKey={`acc_${i}_X`} stroke="#ff4d4f" strokeWidth={1.5} dot={false} isAnimationActive={false} />
@@ -418,11 +475,11 @@ export const IoTDashboard: React.FC = () => {
 
             {expandedSection === 'geophone' && Array.from({ length: 10 }).map((_, i) => (
               <div key={i} style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
-                <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>📳 Geophone Node {i + 1} (in/s)</h5>
+                <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>📳 Geophone Node {i + 1} (in/s) {accelMode && <span style={modeBadgeStyle}>{accelMode}</span>}</h5>
                  <ChartTimeframeDropdown value={geophoneTimeframe} onChange={setGeophoneTimeframe} />
                   <div style={{ width: '100%', height: '180px',}}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={getFilteredChartData(geophoneTimeframe)} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                    <LineChart data={getMergedChartData(geophoneTimeframe, ['accelerometer'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                       <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
                       <Line name="X-Axis" type="monotone" dataKey={`geo_${i}_X`} stroke="#ff4d4f" strokeWidth={1.5} dot={false} isAnimationActive={false} />
@@ -436,11 +493,11 @@ export const IoTDashboard: React.FC = () => {
 
             {expandedSection === 'strain' && Array.from({ length: 9 }).map((_, i) => (
               <div key={i} style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
-                <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>📐 Gauge Channel {i + 1} (PSI)</h5>
+                <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>📐 Gauge Channel {i + 1} (PSI) {strainMode && <span style={modeBadgeStyle}>{strainMode}</span>}</h5>
                 <ChartTimeframeDropdown value={strainTimeframe} onChange={setStrainTimeframe} />
                   <div style={{ width: '100%', height: '180px',}}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={getFilteredChartData(strainTimeframe)} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                    <LineChart data={getMergedChartData(strainTimeframe, ['strainGauge'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                       <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
                       <Line name="Load" type="monotone" dataKey={`sg_${i}`} stroke="#1890ff" strokeWidth={1.5} dot={false} isAnimationActive={false} />
@@ -452,11 +509,11 @@ export const IoTDashboard: React.FC = () => {
 
             {expandedSection === 'gnss' && Array.from({ length: 6 }).map((_, i) => (
               <div key={i} style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
-                <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🛰️ GNSS Node {i + 1} (in)</h5>
+                <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🛰️ GNSS Node {i + 1} (in) {gnssMode && <span style={modeBadgeStyle}>{gnssMode}</span>}</h5>
                 <ChartTimeframeDropdown value={gnssTimeframe} onChange={setGnssTimeframe} />
                   <div style={{ width: '100%', height: '180px',}}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={getFilteredChartData(gnssTimeframe)} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                    <LineChart data={getMergedChartData(gnssTimeframe, ['gnss'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                       <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
                       <Line name="E" type="monotone" dataKey={`gnss_${i}_E`} stroke="#52c41a" dot={false} isAnimationActive={false} />
@@ -471,11 +528,11 @@ export const IoTDashboard: React.FC = () => {
             {expandedSection === 'hydro' && (
               <>
                 <div style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
-                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>💧 River Bed Levels (Water Level 1 & 2)</h5>
+                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>💧 River Bed Levels (Water Level 1 & 2) {hydroMode && <span style={modeBadgeStyle}>{hydroMode}</span>}</h5>
                   <ChartTimeframeDropdown value={hydroTimeframe} onChange={setHydroTimeframe} />
                   <div style={{ width: '100%', height: '180px',}}>
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={getFilteredChartData(hydroTimeframe)} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                      <LineChart data={getMergedChartData(hydroTimeframe, ['waterVelocity', 'waveRadar'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                         <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
                         <Line name="WL 1 (in)" type="monotone" dataKey="waterLevel_1" stroke="#096dd9" dot={false} isAnimationActive={false} />
@@ -485,11 +542,11 @@ export const IoTDashboard: React.FC = () => {
                   </div>
                 </div>
                 <div style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
-                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🌊 Water Runoff Stream Velocity</h5>
+                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🌊 Water Runoff Stream Velocity {runoffMode && <span style={modeBadgeStyle}>{runoffMode}</span>}</h5>
                   <ChartTimeframeDropdown value={runoffTimeframe} onChange={setRunoffTimeframe} />
                   <div style={{ width: '100%', height: '180px',}}>
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={getFilteredChartData(runoffTimeframe)} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                      <LineChart data={getMergedChartData(runoffTimeframe, ['waterVelocity'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                         <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
                         <Line name="Velocity (mph)" type="monotone" dataKey="waterVelocity" stroke="#fa8c16" strokeWidth={2} dot={false} isAnimationActive={false} />
@@ -498,11 +555,11 @@ export const IoTDashboard: React.FC = () => {
                   </div>
                 </div>
                 <div style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
-                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🏗 Structural Pier Scour Penetration</h5>
+                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🏗 Structural Pier Scour Penetration {scourCardMode && <span style={modeBadgeStyle}>{scourCardMode}</span>}</h5>
                   <ChartTimeframeDropdown value={scourTimeframe} onChange={setScourTimeframe} />
                   <div style={{ width: '100%', height: '180px',}}>
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={getFilteredChartData(scourTimeframe)} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                      <LineChart data={getMergedChartData(scourTimeframe, ['scour'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                         <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
                         <Line name="Pier 1 Scour" type="monotone" dataKey="scour_1" stroke="#722ed1" dot={false} isAnimationActive={false} />
@@ -512,11 +569,11 @@ export const IoTDashboard: React.FC = () => {
                   </div>
                 </div>
                 <div style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
-                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>📡 Wave Profile (Radar)</h5>
+                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>📡 Wave Profile (Radar) {waveMode && <span style={modeBadgeStyle}>{waveMode}</span>}</h5>
                   <ChartTimeframeDropdown value={waveTimeframe} onChange={setWaveTimeframe} />
                   <div style={{ width: '100%', height: '180px',}}>
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={getFilteredChartData(waveTimeframe)} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                      <LineChart data={getMergedChartData(waveTimeframe, ['waveRadar'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                         <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
                         <Line name="Wave Height (in)" type="monotone" dataKey="waveHeight" stroke="#00b8d9" strokeWidth={2} dot={false} isAnimationActive={false} />
