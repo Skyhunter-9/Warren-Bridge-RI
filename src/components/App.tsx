@@ -27,6 +27,7 @@ import { selectionStorage } from "../selectionStorage";
 import { propertyGridUiProvider, SensorInspectorTab, treeWidgetUiProvider } from "./UiProviders";
 import { useAuthorizationContext } from "./Authorization";
 import { MyCustomUiProvider } from "./MyCustomUiProvider";
+import { ProcessedResultsUiProvider } from "./ProcessedResultsUiProvider";
 import { Developer_Tab } from "./Developer_Tab";
 import { sensorDecorator } from "../Sensors/SensorDecorator";
 import { SensorGraphPopup } from "../Sensors/SensorGraphPopup";
@@ -98,6 +99,7 @@ export function App({ iTwinId, iModelId, changesetId }: AppProps) {
           // This project's custom tabs. Each is a small class implementing UiItemsProvider;
           // add/remove entries here to add/remove a right-panel tab.
           new MyCustomUiProvider(),   // "IoT Dashboard" tab (live sensor charts) - MyCustomUiProvider.tsx
+          new ProcessedResultsUiProvider(), // "Processed Results" tab (Python-backed math) - ProcessedResultsUiProvider.tsx
           new Developer_Tab(),        // "Developer Tab" - click-to-copy element Hex ID tool - Developer_Tab.tsx
           new SensorInspectorTab(),   // "Sensors" tab - lists SENSOR_GROUPS with resolved coordinates - Sensors/SensorInspectorTab.tsx
         ]}

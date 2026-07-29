@@ -133,7 +133,9 @@ export const SENSOR_GROUPS: SensorGroup[] = [
     iconUrl: "/icons/sensor-darkblue.svg",
     expectedCount: 1,
     // TODO: add this sensor's mount element Hex ID here (Developer Tab).
-    elementIds: [],
+    elementIds: [
+      { elementId: "0x20000000553", offset: { x: 0, y: -1, z: 1 } }
+    ],
   },
   {
     // Co-located with waterLevel[1] - see SensorService.ts's SensorSnapshot.waterLevel and
@@ -145,7 +147,9 @@ export const SENSOR_GROUPS: SensorGroup[] = [
     iconUrl: "/icons/sensor-lightblue.svg",
     expectedCount: 1,
     // TODO: add this sensor's mount element Hex ID here (Developer Tab).
-    elementIds: [],
+    elementIds: [
+      { elementId: "0x20000000545", offset: { x: 0, y: -2, z: -4.5 } }
+    ],
   },
   {
     type: "scour",

@@ -14,8 +14,13 @@ that link to live (simulated or real-hardware) structural/environmental telemetr
 - `npm run build` — `tsc -b && vite build`; use this (not a separate `tsc` invocation) to typecheck, since `tsconfig.json` has `noEmit: true` and is a build-mode config (`tsc -b`)
 - `npm run lint` — ESLint over the whole repo
 - `npm run preview` — serves the production `dist` build on port 3000
+- `cd python && .venv\Scripts\activate && uvicorn api.main:app --reload --port 8000` — runs the
+  separate Python signal-processing backend (see "Python backend" below); the dashboard's
+  Geophone Displacement card needs this running to show anything other than a connection error
 
-There is no test suite (`"test": ""` in package.json, no test files present).
+There is no test suite (`"test": ""` in package.json, no test files present) for the TS app;
+`python/geophonetest/displacement.py demo` is the closest thing on the Python side (a
+synthetic self-check, not an automated test suite either).
 
 ### Required `.env`
 
@@ -26,8 +31,11 @@ check. Also `IMJS_ITWIN_ID`/`IMJS_IMODEL_ID` (or pass `?iTwinId=...&iModelId=...
 — see `src/components/Routes.tsx`). Sensor-service mode is controlled by `VITE_SENSOR_MODE`
 (`SIMULATED` default, or `REAL` — see `VITE_COMPANY_A_URL`
 / `VITE_COMPANY_B_URL` for vendor endpoints); the same switch also gates the wave radar display
-(see `VITE_RADAR_VENDOR_URL`, `src/radar/radarprocessing/radarService.ts`). See `README.md` for how to
-obtain OIDC/iTwin/iModel values.
+(see `VITE_RADAR_VENDOR_URL`, `src/radar/radarprocessing/radarService.ts`). `VITE_PYTHON_API_URL`
+points at the separate Python signal-processing backend, shared by every "result script" endpoint
+(see "Python backend" below) — unlike the other vendor URLs, this one isn't gated by
+`VITE_SENSOR_MODE` since Python handles its own simulated/real distinction internally. See
+`README.md` for how to obtain OIDC/iTwin/iModel values.
 
 ## Architecture
 
@@ -46,8 +54,11 @@ they stack together in the same right-side panel group. `src/Templates/WidgetTem
 copy-paste starting point for adding a new one (component + provider class), with the exact
 import/registration snippet to paste into `App.tsx`.
 
-Existing tabs: `MyCustomUiProvider.tsx` (IoT Dashboard), `Developer_Tab.tsx` (Hex ID inspector —
-click an element to copy its ID to clipboard, used to populate sensor lists), `SensorInspectorTab.tsx`
+Existing tabs: `MyCustomUiProvider.tsx` (IoT Dashboard), `ProcessedResultsUiProvider.tsx`
+(Processed Results — charts backed by real signal-processing math from the Python backend,
+kept separate from IoT Dashboard's raw/simulated sensor charts; content lives in
+`ProcessedResultsDashboard.tsx`), `Developer_Tab.tsx` (Hex ID inspector — click an element to
+copy its ID to clipboard, used to populate sensor lists), `SensorInspectorTab.tsx`
 (Sensor Station Registry — lists configured sensors per type with resolved coordinates).
 `UiProviders.tsx` holds the built-in model tree / property grid providers (from
 `@itwin/tree-widget-react` / `@itwin/property-grid-react`), both sharing `selectionStorage.ts`
@@ -135,6 +146,64 @@ the same visual style as every other sensor graph in the dashboard — no custom
   Spectrum" samples the Gaussian curve at many period points and charts energy vs. period — its
   X-axis is period, not time, so (unlike every other chart here) a timeframe dropdown doesn't
   apply and is intentionally omitted.
+
+### Python backend (`python/`)
+
+A separate, standalone Python project (own venv, own dependencies — not part of the `npm`/Vite
+build at all) for signal-processing math that doesn't belong in the browser: FFT on
+accelerometers (planned), and — built so far — geophone velocity→displacement recovery. More
+"result scripts" are expected over time, so both the Python and TS sides are built around a
+shared, reusable pattern rather than one-off code per script — **see `python/api/main.py`'s
+module docstring ("HOW TO ADD A NEW RESULT SCRIPT") for the exact steps to add the next one.**
+
+- **`python/geophonetest/displacement.py`** — the actual math, runnable standalone with no web
+  app involved (`python displacement.py demo` for a synthetic known-answer validation,
+  `python displacement.py live --file x.csv` for a real recording). Geophones measure
+  *velocity*; getting displacement means integrating it (`integrate_trapezoidal`/
+  `integrate_simpsons`), which drifts badly unless the bias/slow-wander is removed first
+  (`highpass_filter`, a zero-phase Butterworth in second-order-sections form — the plain
+  transfer-function form is numerically unstable at this cutoff-to-sample-rate ratio).
+  **Important, non-obvious result**: after high-pass-filter drift correction, the recovered
+  displacement's *shape* is accurate but its absolute/DC position is not (a high-pass filter
+  discards that by definition) — that's fine, since detecting a vehicle's deflection wobble
+  only needs relative motion, not absolute position (see `rmse_shape()`'s docstring for the
+  full reasoning). `generate_live_window()` is the continuous, wall-clock-time-keyed version
+  of the demo's synthetic signal, used by the API so consecutive polls see an evolving signal
+  rather than restarting from t=0 each time — every new result script needs one of these.
+- **`python/api/buffered_series.py`** — `BufferedSeries`, the shared plumbing every endpoint in
+  `main.py` uses: a persistent, append-only buffer of raw samples (module-level state per
+  script, capped at `max_buffer_seconds` — default 1hr, same idea as `sensorDataStore.ts`'s
+  `MAX_HISTORY=5000`), only ever extended with genuinely new samples rather than regenerated
+  from scratch. That distinction matters: an earlier version regenerated a fresh window per
+  request, and since `generate_live_window`'s noise is unseeded, overlapping requests invented
+  different values for the same past instant, making already-displayed history silently
+  rewrite itself on every poll. `BufferedSeries.poll()` also handles filter-settle-in
+  trimming and downsampling to ~1 point/sec - the boilerplate that's identical for every
+  script; a new one only supplies a `generate(end_time, window_seconds)` and a
+  `process(t, raw) -> {name: array}` function (see `main.py`'s `_process_geophone` +
+  `geophone_series`).
+- **`python/api/main.py`** — the FastAPI app: CORS setup, one `BufferedSeries` instance +
+  one `@app.get(...)` route per result script. Run with
+  `cd python && .venv\Scripts\activate && uvicorn api.main:app --reload --port 8000`. This is
+  this app's established "REAL mode vendor endpoint" pattern (see
+  `SensorService.ts`/`radarService.ts`), just running as an actual process instead of an
+  imagined vendor box. Currently every script generates a continuous synthetic signal (no real
+  hardware/file feed wired in yet) — swapping that in later only changes what a script's
+  `generate`/`process` functions read from, not `BufferedSeries` or anything on the TS side.
+- **`src/processing/`** — the reusable TS-side half: `createProcessingStore(endpointPath)`
+  (one call = a full polling store: eager-singleton + `BeEvent`, same pattern as
+  `sensorDataStore.ts`/`radarDataStore.ts`, hitting `${VITE_PYTHON_API_URL}${endpointPath}` —
+  one shared backend URL for every script, only the path differs) and
+  `ProcessingLineChart.tsx` (the generic chart: `ChartTimeframeDropdown` + `LineChart`, same
+  visual style/behavior as every other sensor graph — works because `BufferedSeries` gives it
+  real accumulated history to filter, not a fixed window). A new script's whole TS side is a
+  one-line store + a small chart component configured with `title`/`lines` — see
+  `src/geophone/geophoneDisplacementStore.ts` + `GeophoneDisplacementChart.tsx` for the exact
+  pattern to copy, then render the new chart in `ProcessedResultsDashboard.tsx`.
+- **`src/geophone/`** — the first (and so far only) concrete result-script consumer, following
+  the `src/processing/` pattern above. Mounted in the separate "Processed Results" tab
+  (`ProcessedResultsDashboard.tsx`/`ProcessedResultsUiProvider.tsx`), not IoT Dashboard — see
+  "Custom side-panel tabs" above.
 
 ### Adding a new sensor
 
