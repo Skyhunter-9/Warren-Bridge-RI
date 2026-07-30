@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { StagePanelLocation, StagePanelSection, UiItemsProvider, Widget } from "@itwin/appui-react";
 import { IModelApp, NotifyMessageDetails, OutputMessagePriority } from "@itwin/core-frontend";
-import { resolveSensorPosition } from "../Sensors/resolveSensorPosition";
+import { resolveSensorPosition } from "../Sensors/Sensor3DDisplay";
 
 // Renders the "Developer Tab" side panel: a toggleable "Hex ID Inspector" that watches
 // whatever element you click in the 3D view, copies its Hex ID to the clipboard, and shows
 // its resolved spatial position (meters), Model ID, and Category ID. This is the fastest way
 // to find the real element ID for a new sensor to add to SENSOR_GROUPS
-// (src/Sensors/SensorIcons.ts), or its offset via the resolved position shown below.
+// (src/Sensors/Sensor3DDisplay.tsx), or its offset via the resolved position shown below.
 const NewFeatureComponent = () => {
   const [isEnabled, setIsEnabled] = useState<boolean>(false);
   const [hexId, setHexId] = useState<string>("None");
@@ -46,7 +46,7 @@ const NewFeatureComponent = () => {
 
         navigator.clipboard.writeText(firstElementId).catch(() => {});
 
-        // Same bbox-center resolution SensorDecorator.tsx uses for markers - shown here so
+        // Same bbox-center resolution Sensor3DDisplay.tsx's SensorDecorator uses for markers - shown here so
         // you can read off a sensor's position without having to temporarily add it as a
         // sensor just to see its coordinates.
         void resolveSensorPosition(iModelConnection, firstElementId).then((location) => {

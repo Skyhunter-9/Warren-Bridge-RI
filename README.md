@@ -15,6 +15,14 @@ browser opens automatically once it's ready. The `.env` file already has this pr
 configuration, so no extra setup is required. Close the terminal/console window it opens to
 stop the app.
 
+## Script List For Editing/Testing
+
+npm start - runs the program and opens localport3000
+npm run stop - stops the program and kills localport3000
+git add . - adds all changes ready to be commited to github
+git commit -m "" - commits changes and adds name for commitment
+git push - pushes commit to github and completes the saving process
+
 ## Environment Variables
 
 Prior to running the app, you will need to add OIDC client configuration to the variables in the .env file:

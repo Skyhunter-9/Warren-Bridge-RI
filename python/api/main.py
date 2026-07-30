@@ -2,7 +2,7 @@
 FastAPI service exposing "result script" processing pipelines over HTTP, so the TypeScript
 dashboard fetches already-processed, chart-ready numbers instead of raw samples - the browser
 never sees a raw 100Hz signal, only the finished result. This is this app's established "REAL
-mode vendor endpoint" pattern (see SensorService.ts/radarService.ts), just running as an actual
+mode vendor endpoint" pattern (see sensorIngestion.ts/radarService.ts), just running as an actual
 process instead of an imagined vendor box.
 
 Run it with (from the python/ directory, with the venv active):

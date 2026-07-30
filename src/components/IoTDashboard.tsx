@@ -2,27 +2,33 @@
 //
 // Renders the "IoT Dashboard" tab: live-updating charts for accelerometers, strain gauges,
 // and hydrology, plus summary tiles for weather/hydro/GNSS. Data flow, top to bottom:
-//   1. sensorDataStore.ts polls SensorService.getLatestSnapshot() once a second and keeps a
+//   1. sensorIngestion.ts polls SensorService.getLatestSnapshot() once a second and keeps a
 //      shared, app-wide buffer (capped at the last 5000 points) - this component just
 //      mirrors that buffer into local state via onSnapshotsChanged, it doesn't poll itself.
 //      (The buffer is shared - not owned by this component - so a sensor marker's popup
-//      chart, SensorGraphPopup.tsx, still has live data even if this tab is never opened.)
+//      chart, Sensor3DDisplay.tsx's SensorGraphPopup, still has live data even if this tab
+//      is never opened.)
 //   2. `chartData` (useMemo) flattens each SensorSnapshot into one flat object per point,
 //      because Recharts' <Line dataKey="..."> needs flat keys like `acc_0_X`, not nested
-//      arrays/objects - via the same buildChartData() used by SensorGraphPopup.tsx.
+//      arrays/objects - via the same buildChartData() used by Sensor3DDisplay.tsx's popup.
 //   3. `getFilteredChartData(timeframe)` slices that flat array down to whatever time
 //      window the user picked in a chart's dropdown.
-// Edit SensorService.ts to change what data is generated/fetched; edit this file to change
+// Edit sensorIngestion.ts to change what data is generated/fetched; edit this file to change
 // how it's charted/laid out.
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import SensorService from '../Sensors/SensorService';
-import { getSnapshots, onSnapshotsChanged, replaceSnapshots } from '../Sensors/sensorDataStore';
+import SensorService, {
+  getCsvHistory,
+  getLatestCsvRow,
+  getSnapshots,
+  onCsvHistoryChanged,
+  onSnapshotsChanged,
+  replaceSnapshots,
+  SENSOR_INGESTION,
+} from '../Sensors/sensorIngestion';
 import { buildChartData, mergeChartRows } from '../Sensors/chartData';
-import { SENSOR_INGESTION } from '../Sensors/ingestionConfig';
-import { getCsvHistory, getLatestCsvRow, onCsvHistoryChanged } from '../Sensors/csvIngestion';
-import { SensorType } from '../Sensors/SensorIcons';
+import { SensorType } from '../Sensors/Sensor3DDisplay';
 import { RadarWaveWidget } from '../radar/radargraph/RadarWaveWidget';
 
 // ============================================================================
@@ -175,7 +181,7 @@ export const IoTDashboard: React.FC = () => {
   };
 
   // Merges the live buffer with any CSV-mode sensor types' downloaded history (see
-  // csvIngestion.ts) into one Recharts-ready array, filtered to the same lookback window as
+  // sensorIngestion.ts) into one Recharts-ready array, filtered to the same lookback window as
   // the live-only path above. Types still in API mode contribute nothing extra here (their
   // data is already in `chartData`/getFilteredChartData), so this is a safe drop-in
   // replacement for getFilteredChartData on any card that might include a CSV-mode line.
@@ -198,7 +204,8 @@ export const IoTDashboard: React.FC = () => {
   };
 
   // null when every listed type is in (the default) API mode, so the common case shows no
-  // badge at all - only sensors actually switched to CSV in ingestionConfig.ts get flagged.
+  // badge at all - only sensors actually switched to CSV in sensorIngestion.ts's
+  // SENSOR_INGESTION config get flagged.
   const modeLabel = (types: SensorType[]): string | null => {
     const modes = new Set(types.map((t) => SENSOR_INGESTION[t].mode));
     if (modes.size === 1 && modes.has("API")) return null;
@@ -207,8 +214,8 @@ export const IoTDashboard: React.FC = () => {
 
   const modeBadgeStyle: React.CSSProperties = { fontSize: '10px', fontWeight: 'normal', color: '#8c6d1f', background: '#fff7e0', border: '1px solid #f0d989', borderRadius: '3px', padding: '1px 5px', marginLeft: '6px' };
 
-  // Mirrors the shared sensorDataStore buffer into local state whenever it changes (new poll,
-  // or a historical replace below) - the actual polling loop lives in sensorDataStore.ts, not
+  // Mirrors the shared sensorIngestion buffer into local state whenever it changes (new poll,
+  // or a historical replace below) - the actual polling loop lives in sensorIngestion.ts, not
   // here, so it keeps running even while this tab isn't mounted.
   useEffect(() => {
     return onSnapshotsChanged.addListener(() => setData(getSnapshots()));
@@ -216,7 +223,7 @@ export const IoTDashboard: React.FC = () => {
 
   // Forces a re-render whenever any CSV-mode sensor type's history changes (new hourly
   // download merged in) - mirrors the onSnapshotsChanged listener above, but for
-  // csvIngestion.ts's separate, non-1Hz data path.
+  // sensorIngestion.ts's separate, non-1Hz CSV data path.
   const [, setCsvTick] = useState(0);
   useEffect(() => {
     return onCsvHistoryChanged.addListener(() => setCsvTick((t) => t + 1));
@@ -257,8 +264,8 @@ export const IoTDashboard: React.FC = () => {
   // Flattens each nested SensorSnapshot into one object per data point with keys like
   // `acc_3_Y` or `gnss_1_E`, matching the dataKey props used by the <Line> charts below.
   // Recomputed only when `data` changes (useMemo), since this runs once per new point but
-  // is read by every chart on every render. Shared with SensorGraphPopup.tsx so both read
-  // off the exact same field names.
+  // is read by every chart on every render. Shared with Sensor3DDisplay.tsx's SensorGraphPopup
+  // so both read off the exact same field names.
   const chartData = useMemo(() => buildChartData(data), [data]);
 
   const latest = data[data.length - 1];
@@ -275,6 +282,7 @@ export const IoTDashboard: React.FC = () => {
   const runoffMode = modeLabel(['waterVelocity']);
   const scourCardMode = modeLabel(['scour']);
   const waveMode = modeLabel(['waveRadar']);
+  const weatherMode = modeLabel(['weather']);
 
   return (
     <div style={{ padding: '16px', height: '100%', boxSizing: 'border-box', backgroundColor: '#f4f6f9', color: '#333333', overflowY: 'auto', fontFamily: 'sans-serif' }}>
@@ -291,8 +299,20 @@ export const IoTDashboard: React.FC = () => {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '20px' }}>
           <div role="button" tabIndex={0} onClick={() => setExpandedSection('weather')} onKeyDown={(e) => e.key === 'Enter' && setExpandedSection('weather')} style={{ background: '#fff', padding: '12px', borderRadius: '6px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', cursor: 'pointer' }}>
             <div style={{ fontSize: '11px', color: '#777', textTransform: 'uppercase' }}>🌤️ Weather Station</div>
-            <div style={{ fontSize: '16px', fontWeight: 'bold', marginTop: '4px' }}>{latest.weather.temp}°F <span style={{ fontSize: '11px', fontWeight: 'normal', color: '#555' }}>(feels {latest.weather.heatIndex >= latest.weather.temp ? latest.weather.heatIndex : latest.weather.windChill}°F)</span></div>
-            <div style={{ fontSize: '11px', color: '#555' }}>Wind: {latest.weather.windSpeed} mph | Hum: {latest.weather.humidity}% | Baro: {latest.weather.pressure} inHg</div>
+            <div style={{ fontSize: '16px', fontWeight: 'bold', marginTop: '4px' }}>
+              {getLatestValue('weather', 'temp', latest.weather.temp)}°F{' '}
+              <span style={{ fontSize: '11px', fontWeight: 'normal', color: '#555' }}>
+                (feels {(() => {
+                  const temp = getLatestValue('weather', 'temp', latest.weather.temp);
+                  const heatIndex = getLatestValue('weather', 'heatIndex', latest.weather.heatIndex);
+                  const windChill = getLatestValue('weather', 'windChill', latest.weather.windChill);
+                  return heatIndex >= temp ? heatIndex : windChill;
+                })()}°F)
+              </span>
+            </div>
+            <div style={{ fontSize: '11px', color: '#555' }}>
+              Wind: {getLatestValue('weather', 'windSpeed', latest.weather.windSpeed)} mph | Hum: {getLatestValue('weather', 'humidity', latest.weather.humidity)}% | Baro: {getLatestValue('weather', 'pressure', latest.weather.pressure)} inHg
+            </div>
           </div>
           <div role="button" tabIndex={0} onClick={() => setExpandedSection('hydro')} onKeyDown={(e) => e.key === 'Enter' && setExpandedSection('hydro')} style={{ background: '#fff', padding: '12px', borderRadius: '6px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', cursor: 'pointer' }}>
             <div style={{ fontSize: '11px', color: '#777', textTransform: 'uppercase' }}>💧 Hydro & Scour Dynamics</div>
@@ -350,7 +370,7 @@ export const IoTDashboard: React.FC = () => {
           </div>
 
           {/* 2. GEOPHONE ARRAY CARD - paired 1:1 with the accelerometer nodes above (same
-              node count/order - see SensorService.ts's SensorSnapshot.geophones) */}
+              node count/order - see sensorIngestion.ts's SensorSnapshot.geophones) */}
           <div style={{ background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0', position: 'relative' }}>
             <h4 style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#2d3748' }}>
               📳 Geophone Array (All 10 Nodes){' '}
@@ -461,7 +481,7 @@ export const IoTDashboard: React.FC = () => {
           {/* 6. WEATHER STATION SUMMARY CARD */}
           <div style={{ background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0', position: 'relative' }}>
             <h4 style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#2d3748' }}>
-              🌤️ Weather Station Summary {' '}
+              🌤️ Weather Station Summary {weatherMode && <span style={modeBadgeStyle}>{weatherMode}</span>}{' '}
               <span
                 role="button"
                 tabIndex={0}
@@ -475,7 +495,7 @@ export const IoTDashboard: React.FC = () => {
             <ChartTimeframeDropdown value={weatherTimeframe} onChange={setWeatherTimeframe} />
             <div style={{ width: '100%', height: '180px',}}>
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={getFilteredChartData(weatherTimeframe)} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                <LineChart data={getMergedChartData(weatherTimeframe, ['weather'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#edf2f7" />
                   <XAxis dataKey="time" stroke="#718096" style={{ fontSize: '9px' }} />
                   <YAxis stroke="#718096" style={{ fontSize: '9px' }} domain={['auto','auto']} />
@@ -633,11 +653,11 @@ export const IoTDashboard: React.FC = () => {
             {expandedSection === 'weather' && (
               <>
                 <div style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
-                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>💨 Wind Speed</h5>
+                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>💨 Wind Speed {weatherMode && <span style={modeBadgeStyle}>{weatherMode}</span>}</h5>
                   <ChartTimeframeDropdown value={windSpeedTimeframe} onChange={setWindSpeedTimeframe} />
                   <div style={{ width: '100%', height: '180px',}}>
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={getFilteredChartData(windSpeedTimeframe)} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                      <LineChart data={getMergedChartData(windSpeedTimeframe, ['weather'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                         <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
                         <Line name="Wind Speed (mph)" type="monotone" dataKey="windSpeed" stroke="#1890ff" strokeWidth={2} dot={false} isAnimationActive={false} />
@@ -646,11 +666,11 @@ export const IoTDashboard: React.FC = () => {
                   </div>
                 </div>
                 <div style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
-                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🌡️ Air Temperature</h5>
+                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🌡️ Air Temperature {weatherMode && <span style={modeBadgeStyle}>{weatherMode}</span>}</h5>
                   <ChartTimeframeDropdown value={tempTimeframe} onChange={setTempTimeframe} />
                   <div style={{ width: '100%', height: '180px',}}>
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={getFilteredChartData(tempTimeframe)} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                      <LineChart data={getMergedChartData(tempTimeframe, ['weather'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                         <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
                         <Line name="Temp (°F)" type="monotone" dataKey="temp" stroke="#fa541c" strokeWidth={2} dot={false} isAnimationActive={false} />
@@ -659,11 +679,11 @@ export const IoTDashboard: React.FC = () => {
                   </div>
                 </div>
                 <div style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
-                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🧭 Barometric Pressure</h5>
+                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🧭 Barometric Pressure {weatherMode && <span style={modeBadgeStyle}>{weatherMode}</span>}</h5>
                   <ChartTimeframeDropdown value={pressureTimeframe} onChange={setPressureTimeframe} />
                   <div style={{ width: '100%', height: '180px',}}>
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={getFilteredChartData(pressureTimeframe)} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                      <LineChart data={getMergedChartData(pressureTimeframe, ['weather'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                         <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
                         <Line name="Pressure (inHg)" type="monotone" dataKey="pressure" stroke="#722ed1" strokeWidth={2} dot={false} isAnimationActive={false} />
@@ -672,11 +692,11 @@ export const IoTDashboard: React.FC = () => {
                   </div>
                 </div>
                 <div style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
-                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>💧 Relative Humidity</h5>
+                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>💧 Relative Humidity {weatherMode && <span style={modeBadgeStyle}>{weatherMode}</span>}</h5>
                   <ChartTimeframeDropdown value={humidityTimeframe} onChange={setHumidityTimeframe} />
                   <div style={{ width: '100%', height: '180px',}}>
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={getFilteredChartData(humidityTimeframe)} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                      <LineChart data={getMergedChartData(humidityTimeframe, ['weather'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                         <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
                         <Line name="Humidity (%)" type="monotone" dataKey="humidity" stroke="#13c2c2" strokeWidth={2} dot={false} isAnimationActive={false} />
@@ -685,11 +705,11 @@ export const IoTDashboard: React.FC = () => {
                   </div>
                 </div>
                 <div style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
-                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🥵 Heat Index</h5>
+                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🥵 Heat Index {weatherMode && <span style={modeBadgeStyle}>{weatherMode}</span>}</h5>
                   <ChartTimeframeDropdown value={heatIndexTimeframe} onChange={setHeatIndexTimeframe} />
                   <div style={{ width: '100%', height: '180px',}}>
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={getFilteredChartData(heatIndexTimeframe)} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                      <LineChart data={getMergedChartData(heatIndexTimeframe, ['weather'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                         <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
                         <Line name="Heat Index (°F)" type="monotone" dataKey="heatIndex" stroke="#eb2f96" strokeWidth={2} dot={false} isAnimationActive={false} />

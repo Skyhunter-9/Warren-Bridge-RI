@@ -28,7 +28,7 @@ export interface ProcessingStore {
 }
 
 /**
- * Starts an eager-singleton polling loop (same pattern as sensorDataStore.ts/
+ * Starts an eager-singleton polling loop (same pattern as sensorIngestion.ts/
  * radarDataStore.ts) against `${VITE_PYTHON_API_URL}${endpointPath}`, and returns getters/an
  * event to read its state. `endpointPath` should match a route registered in
  * python/api/main.py, e.g. "/geophone-displacement".

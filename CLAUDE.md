@@ -67,47 +67,65 @@ panels).
 
 ### Sensor system (`src/Sensors/`)
 
-This is the core custom feature, spanning several coordinated modules:
+This is the core custom feature. It's deliberately consolidated into four files, one per
+responsibility, rather than one file per class/function — merge new code into the matching file
+below instead of splitting it back out:
 
-- **`SensorIcons.ts`** — `SENSOR_GROUPS`: the single source of truth for sensor types (gnss,
-  accelerometer, strainGauge, waterLevel, waterVelocity, scour), each with a color, icon URL, an
-  `expectedCount`, and an `elementIds: string[]` array of real element Hex IDs. **This is the file
-  to edit to add/remove physical sensors** — grab a Hex ID via the Developer Tab and paste it into
-  the right group's array. Also defines `ElementIconMarker` (an iTwin.js `Marker` subclass) whose
-  `onMouseButton` fires a click event (see below).
-- **`resolveSensorPosition.ts`** — given an element ID, resolves its real world-space marker
-  position. Important nuance: `placement.origin` alone is *not* reliable (can sit at a local/model
-  origin far from the visible geometry) — this transforms the element's own bbox through its
-  placement via `Placement3d.calculateRange()` to land the marker on the actual geometry. This bug
-  (marker rendering at world 0,0 instead of on the element) has already been hit once; don't
-  simplify this back to raw `origin.x/y/z`.
-- **`SensorDecorator.tsx`** — an iTwin.js `Decorator` (registered in `App.tsx`'s `onIModelAppInit`)
-  that walks `SENSOR_GROUPS`, resolves each element's position, and draws the markers every frame.
-  Caches one icon image per icon URL.
-- **`SensorService.ts`** — data layer, decoupled from the 3D viewer entirely. `getMode()` switches
-  on `VITE_SENSOR_MODE`: `generateSimulatedData()` fabricates deterministic sine/cosine-based
-  telemetry; `fetchRealHardwareData()` calls vendor HTTP APIs in parallel with per-field fallback,
-  and falls back to simulated data entirely if the whole batch throws.
-- **`sensorDataStore.ts`** — single app-wide polling loop (1/sec) and snapshot buffer, started as
-  an eager module-level singleton (same pattern as `selectionStorage.ts`). Exists so live data
-  isn't tied to any one component's mount state — both the IoT Dashboard tab and marker-click
-  popups read from this same buffer, so there's exactly one poll per second regardless of how many
-  consumers are watching.
-- **`chartData.ts`** — `buildChartData()` flattens nested `SensorSnapshot`s into flat
-  `acc_0_X`/`gnss_1_E`/`sg_3`-style keys for Recharts; `getSensorSeries(sensorType, nodeIndex)` maps
-  a specific sensor (by type + its 0-based index within that type's `elementIds` array) to the
-  chart series it corresponds to. This is the link between a clicked marker and the chart it opens.
-- **`sensorGraphRequest.ts`** — a `BeEvent` (from `@itwin/core-bentley`) bridging a marker click
-  (which happens imperatively inside the iTwin.js decorator, entirely outside the React tree) over
-  to `SensorGraphPopup.tsx`, which subscribes to it. This is the standard pattern for wiring
-  non-React iTwin.js callbacks (decorators, tool events) into React state in this codebase.
+- **`sensorIngestion.ts`** — everything about getting sensor data *into* the app. `SensorService`
+  is the data layer proper: `getMode()` switches on `VITE_SENSOR_MODE`; `generateSimulatedData()`
+  fabricates deterministic sine/cosine-based telemetry; `fetchRealHardwareData()` calls vendor
+  HTTP APIs in parallel with per-field fallback, falling back to simulated data entirely if the
+  whole batch throws. `SENSOR_INGESTION` is the per-type API-vs-CSV mode config (edit this to
+  switch a type to hourly CSV download instead of live polling), keyed by `SensorType` — this
+  includes `"weather"`, whose single-station marker has no per-node array but still needs the
+  same live-vs-CSV toggle every other sensor gets; `fetchRealHardwareData()` gates its weather
+  fetch the same per-field way it gates accel/geo/strain/gnss, so setting `weather: { mode: "CSV",
+  csvUrl: ... }` skips the live HTTP call entirely instead of always hitting
+  `VITE_WEATHER_STATION_URL`. The CSV parsing/merge/history functions (`getCsvHistory`,
+  `getLatestCsvRow`, etc.) and their own `onCsvHistoryChanged` BeEvent live here too. Finally,
+  `getSnapshots`/`onSnapshotsChanged` are the single app-wide 1/sec polling
+  loop and snapshot buffer, started as an eager module-level singleton (same pattern as
+  `selectionStorage.ts`) — exists so live data isn't tied to any one component's mount state, both
+  the IoT Dashboard tab and marker-click popups read from this same buffer, and REAL mode only
+  makes one round of vendor calls per second no matter how many consumers are watching.
+- **`Sensor3DDisplay.tsx`** — everything about showing sensors *in the 3D view* and reacting to a
+  click on one. `SENSOR_GROUPS` is the single source of truth for sensor types (gnss,
+  accelerometer, strainGauge, waterVelocity, waveRadar, scour, weather), each with a color, icon
+  URL, an `expectedCount`, and an `elementIds` array of real element Hex IDs. **This is the file to
+  edit to add/remove physical sensors** — grab a Hex ID via the Developer Tab and paste it into the
+  right group's array (weather's `elementIds` starts empty — add the weather station's Hex ID the
+  same way). Each entry can also set an optional `name` (e.g. `"Reference GNSS"`) shown by the
+  Sensor Station Registry tab instead of the raw Hex ID — see `getEntryName()`; entries without
+  one fall back to a generic "`<group label> <position>`" name. `resolveSensorPosition()` resolves
+  an element ID to its real world-space marker
+  position — `placement.origin` alone is *not* reliable (can sit at a local/model origin far from
+  the visible geometry), so this transforms the element's own bbox through its placement via
+  `Placement3d.calculateRange()` to land the marker on the actual geometry; this bug (marker
+  rendering at world 0,0 instead of on the element) has already been hit once, don't simplify this
+  back to raw `origin.x/y/z`. `ElementIconMarker` (an iTwin.js `Marker` subclass) draws one icon and
+  fires `onSensorGraphRequested` (a `BeEvent` from `@itwin/core-bentley`) on click — the standard
+  pattern this codebase uses for wiring non-React iTwin.js callbacks into React state, since a
+  decorator's click handler runs entirely outside the React tree. `SensorDecorator` (an iTwin.js
+  `Decorator`, registered in `App.tsx`'s `onIModelAppInit`) walks `SENSOR_GROUPS`, resolves each
+  element's position, and draws the markers every frame, caching one icon image per icon URL.
+  Finally, `SensorGraphPopup` is the React component that subscribes to `onSensorGraphRequested`
+  and renders the clicked sensor's live chart in a floating overlay — mounted once in `App.tsx` as
+  a sibling of `<Viewer>` (not one of the AppUI tabs), so it can appear regardless of which side tab
+  is currently open.
+- **`chartData.ts`** — the IoT Dashboard tab's chart data-shaping, shared with the 3D popup above.
+  `buildChartData()` flattens nested `SensorSnapshot`s into flat `acc_0_X`/`gnss_1_E`/`sg_3`-style
+  keys for Recharts; `getSensorSeries(sensorType, nodeIndex)` maps a specific sensor (by type + its
+  0-based index within that type's `elementIds` array) to the chart series it corresponds to — this
+  is the link between a clicked marker and the chart it opens; `mergeChartRows()` combines the live
+  buffer with CSV-sourced rows for CSV-mode sensor types.
+- **`SensorInspectorTab.tsx`** — the "Sensor Station Registry" side-tab content: independently
+  re-resolves every `SENSOR_GROUPS` Hex ID's world coordinates (via the same `resolveSensorPosition`
+  `Sensor3DDisplay.tsx` uses) so you can see exactly where the app thinks each sensor is, grouped by
+  type with a configured/expected count, and click one to fly the camera to it.
 
-`SensorGraphPopup.tsx` is mounted once in `App.tsx` as a sibling of `<Viewer>` (not one of the
-AppUI tabs), so a marker's popup chart can appear regardless of which side tab is currently open.
-
-`IoTDashboard.tsx` (rendered inside the "IoT Dashboard" tab) mirrors `sensorDataStore` rather than
-polling itself, and reuses `buildChartData`/the same field-naming convention as the popup so both
-stay in sync.
+`IoTDashboard.tsx` (in `src/components/`, rendered inside the "IoT Dashboard" tab) mirrors the
+`sensorIngestion.ts` buffer rather than polling itself, and reuses `buildChartData`/the same
+field-naming convention as the 3D popup so both stay in sync.
 
 ### Wave radar display (`src/radar/radarprocessing/`, `src/radar/radargraph/`)
 
@@ -125,20 +143,20 @@ the same visual style as every other sensor graph in the dashboard — no custom
 - **`radarprocessing/radarTypes.ts`** — `RadarWaveformSample` (one raw surface-elevation
   reading, feet) and `WaveEnergySpectrum` (a single-peaked *non-directional* energy-vs-period
   curve: peak period/spread/energy) — the contract between the two folders.
-- **`radarprocessing/radarService.ts`** — mirrors `SensorService.ts`'s `getMode()` split
-  exactly: `VITE_SENSOR_MODE=REAL` calls `VITE_RADAR_VENDOR_URL`'s `/wave-radar-status`
+- **`radarprocessing/radarService.ts`** — mirrors `sensorIngestion.ts`'s `SensorService.getMode()`
+  split exactly: `VITE_SENSOR_MODE=REAL` calls `VITE_RADAR_VENDOR_URL`'s `/wave-radar-status`
   endpoint (per-field fallback, whole-batch fallback to simulated on failure); this is the
   integration point for a real LX80-O — point the env var at it, no code changes needed as
   long as the vendor returns the flat JSON shape documented in that file.
 - **`radarprocessing/radarWaveformSimulator.ts`** / **`waveSpectrumProcessor.ts`** —
   SIMULATED-mode fabrication; the spectrum's period/energy scale off the `waveRadar` sensor's
-  current `waveHeight` (`SensorService.ts`), and the waveform's oscillation period is driven by
+  current `waveHeight` (`sensorIngestion.ts`), and the waveform's oscillation period is driven by
   the spectrum's `peakPeriodSec` (both generated from one shared timestamp per tick in
   `radarService.ts`, so they always describe the same "sea state" instant) — so this isn't
   disconnected from the rest of the dashboard's hydrology data.
 - **`radarprocessing/radarDataStore.ts`** — eager-singleton polling loop (1Hz, same cadence as
-  `sensorDataStore.ts`) accumulating a `RadarWaveformSample` history (capped, same pattern as
-  `sensorDataStore.ts`'s snapshot buffer) plus the latest spectrum, same `BeEvent` pattern.
+  `sensorIngestion.ts`'s buffer) accumulating a `RadarWaveformSample` history (capped, same pattern
+  as `sensorIngestion.ts`'s snapshot buffer) plus the latest spectrum, same `BeEvent` pattern.
 - **`radargraph/RadarWaveWidget.tsx`** — renders two sibling cards (not a toggle): "Wave Radar
   Signal" is a live time-series of `surfaceElevationFeet` with the same
   `ChartTimeframeDropdown` + `LineChart` layout as other sensor graphs (a local copy of that
@@ -172,7 +190,7 @@ module docstring ("HOW TO ADD A NEW RESULT SCRIPT") for the exact steps to add t
   rather than restarting from t=0 each time — every new result script needs one of these.
 - **`python/api/buffered_series.py`** — `BufferedSeries`, the shared plumbing every endpoint in
   `main.py` uses: a persistent, append-only buffer of raw samples (module-level state per
-  script, capped at `max_buffer_seconds` — default 1hr, same idea as `sensorDataStore.ts`'s
+  script, capped at `max_buffer_seconds` — default 1hr, same idea as `sensorIngestion.ts`'s
   `MAX_HISTORY=5000`), only ever extended with genuinely new samples rather than regenerated
   from scratch. That distinction matters: an earlier version regenerated a fresh window per
   request, and since `generate_live_window`'s noise is unseeded, overlapping requests invented
@@ -186,13 +204,13 @@ module docstring ("HOW TO ADD A NEW RESULT SCRIPT") for the exact steps to add t
   one `@app.get(...)` route per result script. Run with
   `cd python && .venv\Scripts\activate && uvicorn api.main:app --reload --port 8000`. This is
   this app's established "REAL mode vendor endpoint" pattern (see
-  `SensorService.ts`/`radarService.ts`), just running as an actual process instead of an
+  `sensorIngestion.ts`/`radarService.ts`), just running as an actual process instead of an
   imagined vendor box. Currently every script generates a continuous synthetic signal (no real
   hardware/file feed wired in yet) — swapping that in later only changes what a script's
   `generate`/`process` functions read from, not `BufferedSeries` or anything on the TS side.
 - **`src/processing/`** — the reusable TS-side half: `createProcessingStore(endpointPath)`
   (one call = a full polling store: eager-singleton + `BeEvent`, same pattern as
-  `sensorDataStore.ts`/`radarDataStore.ts`, hitting `${VITE_PYTHON_API_URL}${endpointPath}` —
+  `sensorIngestion.ts`/`radarDataStore.ts`, hitting `${VITE_PYTHON_API_URL}${endpointPath}` —
   one shared backend URL for every script, only the path differs) and
   `ProcessingLineChart.tsx` (the generic chart: `ChartTimeframeDropdown` + `LineChart`, same
   visual style/behavior as every other sensor graph — works because `BufferedSeries` gives it
@@ -208,9 +226,9 @@ module docstring ("HOW TO ADD A NEW RESULT SCRIPT") for the exact steps to add t
 ### Adding a new sensor
 
 1. Use the Developer Tab to click the physical element in the 3D view and copy its Hex ID.
-2. Add it to the appropriate group's `elementIds` array in `SensorIcons.ts`.
+2. Add it to the appropriate group's `elementIds` array in `Sensor3DDisplay.tsx`'s `SENSOR_GROUPS`.
 3. It will automatically get a marker (via `SensorDecorator`), show up in the Sensor Station
    Registry tab, and its marker's `nodeIndex` (position in that array) will automatically map to
    the corresponding chart series in `chartData.ts`/`IoTDashboard.tsx` — no other wiring needed,
    as long as that node index has a corresponding series (e.g. don't exceed the sensor counts
-   `SensorService.ts` actually generates for that type).
+   `sensorIngestion.ts`'s `SensorService` actually generates for that type).

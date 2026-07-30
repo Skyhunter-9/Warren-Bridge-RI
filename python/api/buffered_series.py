@@ -59,7 +59,7 @@ class BufferedSeries:
             self._raw = np.concatenate([self._raw, raw_new])
             self._last_generated_time = now
 
-        # Cap memory/CPU (same idea as sensorDataStore.ts's MAX_HISTORY=5000) - "last 1 Year"/
+        # Cap memory/CPU (same idea as sensorIngestion.ts's MAX_HISTORY=5000) - "last 1 Year"/
         # "all time" on the TS timeframe dropdown will just show whatever's within this cap,
         # the same honest limitation the rest of the dashboard already has.
         cutoff = now - self._max_buffer_seconds

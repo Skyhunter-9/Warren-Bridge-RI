@@ -29,8 +29,7 @@ import { useAuthorizationContext } from "./Authorization";
 import { MyCustomUiProvider } from "./MyCustomUiProvider";
 import { ProcessedResultsUiProvider } from "./ProcessedResultsUiProvider";
 import { Developer_Tab } from "./Developer_Tab";
-import { sensorDecorator } from "../Sensors/SensorDecorator";
-import { SensorGraphPopup } from "../Sensors/SensorGraphPopup";
+import { sensorDecorator, SensorGraphPopup } from "../Sensors/Sensor3DDisplay";
 
 interface AppProps {
   iTwinId: string;
@@ -56,7 +55,7 @@ export function App({ iTwinId, iModelId, changesetId }: AppProps) {
     MeasurementActionToolbar.setDefaultActionProvider();
 
     // Register the sensor icon decorator, then load sensor markers once a view opens.
-    // `addDecorator` just registers the decorate() callback (see SensorDecorator.tsx) so it
+    // `addDecorator` just registers the decorate() callback (see Sensor3DDisplay.tsx's SensorDecorator) so it
     // draws every frame; `onViewOpen.addOnce` waits until a viewport/iModel actually exists
     // before we try to query element positions from it.
     IModelApp.viewManager.addDecorator(sensorDecorator);
@@ -105,7 +104,7 @@ export function App({ iTwinId, iModelId, changesetId }: AppProps) {
         ]}
         selectionStorage={selectionStorage}
       />
-      {/* Sits outside the AppUI tab system entirely (see Sensors/SensorGraphPopup.tsx) so a
+      {/* Sits outside the AppUI tab system entirely (see Sensors/Sensor3DDisplay.tsx's SensorGraphPopup) so a
           marker click can pop up its chart no matter which side tab is currently open. */}
       <SensorGraphPopup />
     </>

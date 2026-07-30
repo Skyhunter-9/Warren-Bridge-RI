@@ -1,12 +1,12 @@
 import { RadarWaveformSample } from "./radarTypes";
-import { getSnapshots } from "../../Sensors/sensorDataStore";
+import { getSnapshots } from "../../Sensors/sensorIngestion";
 
 // Fabricates the raw surface-elevation waveform for SIMULATED mode. The Geolux LX80-O
 // continuously measures the distance down to the water surface and (via its own onboard DSP,
 // or ours if this ever processes real samples) derives an oscillating elevation signal from
 // it; in SIMULATED mode there's no real signal to measure, so this synthesizes a plausible
 // oscillation instead - a primary swell component plus a smaller secondary harmonic, both
-// scaled by the waveRadar sensor's current significant wave height (SensorService.ts's
+// scaled by the waveRadar sensor's current significant wave height (sensorIngestion.ts's
 // SensorSnapshot.waveHeight) and oscillating at the wave spectrum's current dominant period
 // (passed in as `peakPeriodSec` - see radarService.ts's generateSimulatedRadarData, which
 // derives both the waveform and the spectrum from the same underlying "sea state" per tick).

@@ -14,8 +14,14 @@ export const ProcessedResultsDashboard: React.FC = () => {
     <div style={{ padding: '16px', height: '100%', boxSizing: 'border-box', backgroundColor: '#f4f6f9', color: '#333333', overflowY: 'auto', fontFamily: 'sans-serif' }}>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '0 0 16px 0', borderBottom: '3px solid #005A9C', paddingBottom: '8px' }}>
-        <h3 style={{ margin: 0, fontSize: '18px', color: '#005A9C', fontWeight: 700 }}>🧮 Processed Results (Python)</h3>
+        <h3 style={{ margin: 0, fontSize: '18px', color: '#005A9C', fontWeight: 700 }}>
+          🧮 Processed Results (Python)
+        </h3>
       </div>
+      <p style={{fontSize: "12px", opacity: 100, margin: 10}}>
+          This dashboard is to show the processed results of all of the data coming from all applicable sensors that are not in connection to Sensequake.
+          This section will deal with any tests that were preformed and the corresponding results as well as live sensor data that is being processed to display results that were calculated.
+      </p>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px' }}>
         {/* GEOPHONE DISPLACEMENT - drift-corrected integration math running in python/, see

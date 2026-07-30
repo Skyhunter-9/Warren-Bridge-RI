@@ -1,10 +1,11 @@
-import { SensorSnapshot } from "./SensorService";
-import { SensorType } from "./SensorIcons";
+import { SensorSnapshot } from "./sensorIngestion";
+import { SensorType } from "./Sensor3DDisplay";
 
 /**
  * Flattens the nested SensorSnapshot history into one flat object per data point, with
  * keys like `acc_3_Y` or `gnss_1_E`. Recharts' <Line dataKey="..."> needs flat keys, not
- * nested arrays/objects - shared by IoTDashboard.tsx and SensorGraphPopup.tsx so both read
+ * nested arrays/objects - shared by IoTDashboard.tsx and Sensor3DDisplay.tsx's SensorGraphPopup
+ * so both read
  * off the exact same field names (see getSensorSeries below for what those names are).
  */
 export function buildChartData(snapshots: readonly SensorSnapshot[]) {
@@ -26,9 +27,9 @@ export function buildChartData(snapshots: readonly SensorSnapshot[]) {
 
 /**
  * Combines the live 1Hz buffer's flat rows with one or more CSV-sourced flat row arrays
- * (csvIngestion.ts's getCsvHistory) into a single array a Recharts <LineChart> can read,
+ * (sensorIngestion.ts's getCsvHistory) into a single array a Recharts <LineChart> can read,
  * ordered by `timestamp`. Used whenever a chart card mixes an API-mode line with a CSV-mode
- * line (or is CSV-only) - see IoTDashboard.tsx and SensorGraphPopup.tsx. Rows are kept as
+ * line (or is CSV-only) - see IoTDashboard.tsx and Sensor3DDisplay.tsx's SensorGraphPopup. Rows are kept as
  * separate entries rather than merged into one row per exact timestamp, since live and CSV
  * data essentially never land on the same instant - each <Line> just has a gap wherever its
  * own dataKey is missing on a given row, which Recharts renders fine.
@@ -50,7 +51,7 @@ export interface SensorSeriesDef {
 }
 
 /** Every geophone is co-located with (and shares a nodeIndex with) an accelerometer - see
- * SensorService.ts's SensorSnapshot.geophones. Factored out so it can be appended whenever
+ * sensorIngestion.ts's SensorSnapshot.geophones. Factored out so it can be appended whenever
  * an accelerometer's series is requested (see the "accelerometer" case below). */
 function geophoneSeries(nodeIndex: number): SensorSeriesDef {
   return {
@@ -66,7 +67,7 @@ function geophoneSeries(nodeIndex: number): SensorSeriesDef {
 
 /** Every water level reading is co-located with (and shares a nodeIndex with) either the
  * water velocity sensor (index 0) or the wave radar sensor (index 1) - see
- * SensorService.ts's SensorSnapshot.waterLevel. Factored out the same way geophoneSeries is,
+ * sensorIngestion.ts's SensorSnapshot.waterLevel. Factored out the same way geophoneSeries is,
  * so it can be appended whenever waterVelocity/waveRadar's series is requested below. Not its
  * own SensorType/marker - like geophone, it's purely a paired reading, not something you'd
  * click on directly in the 3D view. */
@@ -80,7 +81,7 @@ function waterLevelSeries(nodeIndex: number): SensorSeriesDef {
 
 /**
  * Maps a sensor icon (its type + position within that type's elementIds array in
- * SensorIcons.ts) to the specific chartData field(s) it corresponds to - this is the "link"
+ * Sensor3DDisplay.tsx) to the specific chartData field(s) it corresponds to - this is the "link"
  * between a 3D marker and one of the existing IoTDashboard charts. `nodeIndex` is 0-based
  * (matches array position); display labels below are 1-based to match the existing
  * IoTDashboard exploded-view labels ("Accel Node 1", "Gauge Channel 1", etc.).
@@ -148,5 +149,36 @@ export function getSensorSeries(sensorType: SensorType, nodeIndex: number): Sens
         unit: "in",
         lines: [{ dataKey: `scour_${nodeIndex + 1}`, name: `Pier ${nodeIndex + 1} Scour`, color: "#722ed1" }],
       }];
+    case "weather":
+      // Only one field set exists (no per-node array, single station) - every weather marker
+      // shows the same 5 series, one per raw/calculated reading, matching IoTDashboard.tsx's
+      // exploded weather cards' colors exactly so the popup and dashboard read consistently.
+      return [
+        {
+          title: "Wind Speed",
+          unit: "mph",
+          lines: [{ dataKey: "windSpeed", name: "Wind Speed", color: "#1890ff" }],
+        },
+        {
+          title: "Air Temperature",
+          unit: "°F",
+          lines: [{ dataKey: "temp", name: "Temp", color: "#fa541c" }],
+        },
+        {
+          title: "Barometric Pressure",
+          unit: "inHg",
+          lines: [{ dataKey: "pressure", name: "Pressure", color: "#722ed1" }],
+        },
+        {
+          title: "Relative Humidity",
+          unit: "%",
+          lines: [{ dataKey: "humidity", name: "Humidity", color: "#13c2c2" }],
+        },
+        {
+          title: "Heat Index",
+          unit: "°F",
+          lines: [{ dataKey: "heatIndex", name: "Heat Index", color: "#eb2f96" }],
+        },
+      ];
   }
 }

@@ -1,16 +1,18 @@
 import React, { useEffect, useState } from "react";
 import { IModelApp, IModelConnection } from "@itwin/core-frontend";
-import { getEntryElementId, getEntryOffset, SENSOR_GROUPS, SensorType } from "./SensorIcons";
-import { resolveSensorPosition } from "./resolveSensorPosition";
+import { getEntryElementId, getEntryName, getEntryOffset, resolveSensorPosition, SENSOR_GROUPS, SensorType } from "./Sensor3DDisplay";
 
 // Renders the "Sensors" side tab ("Sensor Station Registry" panel in the screenshots).
 // This is a diagnostic/debug view: it independently re-resolves every SENSOR_GROUPS Hex ID's
-// world coordinates (via the same resolveSensorPosition helper SensorDecorator.tsx uses) so
+// world coordinates (via the same resolveSensorPosition helper Sensor3DDisplay.tsx's
+// SensorDecorator uses) so
 // you can see exactly where the app thinks each sensor is, grouped by type with a
 // "configured/expected" count, and click one to fly the camera to it.
 
+// This is the template saying that each sensor node must have this information
 interface ActiveSensorNode {
   hexId: string;
+  name: string;
   x: string;
   y: string;
   z: string;
@@ -31,16 +33,21 @@ export const SensorInspectorComponent = () => {
       for (const group of SENSOR_GROUPS) {
         const nodes: ActiveSensorNode[] = [];
 
-        for (const entry of group.elementIds) {
+        for (let i = 0; i < group.elementIds.length; i++) {
+          const entry = group.elementIds[i];
           const hexId = getEntryElementId(entry);
+          // Falls back to a generic "<group label> <position>" name (e.g. "Strain Gauge 3")
+          // when the entry has no explicit `name` set - see getEntryName()'s doc comment.
+          const name = getEntryName(entry, `${group.label} ${i + 1}`);
           try {
             const location = await resolveSensorPosition(iModel, hexId);
             if (location) {
-              // Match the same offset SensorDecorator.tsx applies, so this panel shows
+              // Match the same offset Sensor3DDisplay.tsx's SensorDecorator applies, so this panel shows
               // exactly where the marker actually renders, not just the raw resolved position.
               const offset = getEntryOffset(entry);
               nodes.push({
                 hexId,
+                name,
                 x: (location.x + offset.x).toString(),
                 y: (location.y + offset.y).toString(),
                 z: (location.z + offset.z).toString(),
@@ -94,8 +101,9 @@ export const SensorInspectorComponent = () => {
       <h3>Sensor Station Registry</h3>
       <p style={{ fontSize: "12px", opacity: 0.7, margin: 0 }}>
         Permanently configured directly inside your application code workspace.
-      </p>
+      </p> 
 
+      
       {SENSOR_GROUPS.map((group) => {
         const nodes = resolvedByType[group.type] ?? [];
         return (
@@ -107,7 +115,7 @@ export const SensorInspectorComponent = () => {
 
             {nodes.length === 0 ? (
               <div style={{ fontSize: "12px", opacity: 0.5, fontStyle: "italic", padding: "4px" }}>
-                No {group.label} sensors configured yet - add Hex IDs to the &quot;{group.type}&quot; entry in SensorIcons.ts.
+                No {group.label} sensors configured yet - add Hex IDs to the &quot;{group.type}&quot; entry in Sensor3DDisplay.tsx.
               </div>
             ) : (
               <div style={{ maxHeight: "200px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "4px", background: "rgba(0,0,0,0.1)", borderRadius: "4px", padding: "4px" }}>
@@ -118,8 +126,9 @@ export const SensorInspectorComponent = () => {
                     type="button"
                     style={{ padding: "8px", background: "rgba(255,255,255,0.05)", borderRadius: "3px", cursor: "pointer", fontSize: "12px", display: "flex", flexDirection: "column", borderLeft: `4px solid ${group.color}`, borderTop: "none", borderRight: "none", borderBottom: "none", textAlign: "left", width: "100%", color: "inherit" }}
                   >
-                    <span style={{ fontFamily: "monospace", fontWeight: "bold", color: group.color }}> {sensor.hexId} </span>
-                    <span style={{ fontSize: "10px", opacity: 0.6, marginTop: "2px" }}> Coordinates: X:{sensor.x} Y:{sensor.y} Z:{sensor.z} </span>
+                    {/* This creates the display material on the dashboard */}
+                    <span style={{ fontWeight: "bold", color: group.color }}> {sensor.name} </span>
+                    
                   </button>
                 ))}
               </div>

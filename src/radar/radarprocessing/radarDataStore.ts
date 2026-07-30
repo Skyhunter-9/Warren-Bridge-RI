@@ -4,7 +4,7 @@ import { generateWaveEnergySpectrum } from "./waveSpectrumProcessor";
 import { RadarWaveformSample, WaveEnergySpectrum } from "./radarTypes";
 import RadarService from "./radarService";
 
-// Shared app-wide radar data - mirrors ../../Sensors/sensorDataStore.ts's eager-singleton +
+// Shared app-wide radar data - mirrors ../../Sensors/sensorIngestion.ts's eager-singleton +
 // BeEvent pattern (and its 1Hz cadence, MAX_HISTORY cap, and history-array shape) so
 // RadarWaveWidget.tsx's "Wave Radar Signal" chart can use the exact same timeframe-slicing
 // approach as every other sensor graph in the dashboard. Goes through RadarService.ts (not

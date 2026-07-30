@@ -1,5 +1,5 @@
 import { WaveEnergySpectrum } from "./radarTypes";
-import { getSnapshots } from "../../Sensors/sensorDataStore";
+import { getSnapshots } from "../../Sensors/sensorIngestion";
 
 // Derives the non-directional wave energy spectrum shown by RadarWaveWidget.tsx. A real
 // Geolux LX80-O computes this (or the raw waveform this could be derived from via our own
@@ -9,7 +9,7 @@ import { getSnapshots } from "../../Sensors/sensorDataStore";
 //
 // In SIMULATED mode there's no real signal to analyze, so this fabricates a single-peaked
 // spectrum instead - period/energy scale with the waveRadar sensor's current significant wave
-// height (SensorService.ts's SensorSnapshot.waveHeight), so this display isn't disconnected
+// height (sensorIngestion.ts's SensorSnapshot.waveHeight), so this display isn't disconnected
 // from the rest of the dashboard's hydrology data.
 //
 // `timestamp` is passed in (rather than calling Date.now() here) so the raw waveform sample

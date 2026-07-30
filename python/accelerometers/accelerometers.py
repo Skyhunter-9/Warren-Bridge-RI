@@ -7,7 +7,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.signal import butter, sosfiltfilt
 
-#Workflow is as follows:
+# Workflow is as follows:
 # Mode will switch between test data demo and live data.
 # Mean will be subtracted out to remove DC component
 # FFT will be preformed in incrememnts of 30 seconds and plotted in real time.
