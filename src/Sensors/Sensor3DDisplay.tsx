@@ -8,7 +8,7 @@
 // separate files (SensorIcons.ts, resolveSensorPosition.ts, SensorDecorator.tsx,
 // sensorGraphRequest.ts, SensorGraphPopup.tsx) since they're really one feature: "sensor
 // markers in 3D, and what happens when you click one." Data ingestion
-// (SensorService/sensorDataStore/CSV, see sensorIngestion.ts) and IoT-tab chart data-shaping
+// (SensorService/sensorDataStore/periodic batches, see sensorIngestion.ts) and IoT-tab chart data-shaping
 // (chartData.ts) live in their own files and are only imported here for the popup's chart
 // rendering.
 
@@ -28,7 +28,7 @@ import { Point2d, Point3d, XYAndZ } from "@itwin/core-geometry";
 import { Placement3d, Placement3dProps } from "@itwin/core-common";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { buildChartData, getSensorSeries, mergeChartRows } from "./chartData";
-import { getCsvHistory, getSnapshots, onCsvHistoryChanged, onSnapshotsChanged, SENSOR_INGESTION } from "./sensorIngestion";
+import { getPeriodicHistory, getSnapshots, onPeriodicHistoryChanged, onSnapshotsChanged, SENSOR_INGESTION } from "./sensorIngestion";
 
 // iTwin.js's spatial coordinate system is always in meters (a BIS/iModel standard, not
 // something this app can change) - shared by the offset conversion below and by
@@ -444,12 +444,12 @@ export function SensorGraphPopup() {
     return onSnapshotsChanged.addListener(() => setTick((t) => t + 1));
   }, [request]);
 
-  // Same idea as the listener above, but for the CSV ingestion section's separate
-  // hourly-download data path (sensorIngestion.ts) - a CSV-mode sensor's popup should redraw
-  // as soon as a new file lands, not just once per live poll (which carries no data for it).
+  // Same idea as the listener above, but for the periodic ingestion section's separate
+  // batch data path (sensorIngestion.ts) - a Periodic-mode sensor's popup should redraw
+  // as soon as a new batch lands, not just once per live poll (which carries no data for it).
   useEffect(() => {
     if (!request) return;
-    return onCsvHistoryChanged.addListener((type) => {
+    return onPeriodicHistoryChanged.addListener((type) => {
       if (type === request.sensorType) setTick((t) => t + 1);
     });
   }, [request]);
@@ -463,22 +463,22 @@ export function SensorGraphPopup() {
   );
 
   // Only the most recent 45 points (~45 seconds), matching the "Real time" default window
-  // used elsewhere in IoTDashboard.tsx - plus, if this sensor type is in CSV mode (see
-  // sensorIngestion.ts), every downloaded CSV row too, since that data never lands in the
+  // used elsewhere in IoTDashboard.tsx - plus, if this sensor type is in Periodic mode (see
+  // sensorIngestion.ts), every fetched periodic row too, since that data never lands in the
   // live 1Hz buffer at all and would otherwise never show up here.
-  // `tick` isn't read inside the callback - getSnapshots()/getCsvHistory() read external
-  // mutable state - but it's what should trigger a recompute (a live poll or CSV download),
+  // `tick` isn't read inside the callback - getSnapshots()/getPeriodicHistory() read external
+  // mutable state - but it's what should trigger a recompute (a live poll or periodic fetch),
   // so it's deliberately kept as a dep despite the lint rule not being able to see that.
   const chartData = useMemo(() => {
     const liveRows = buildChartData(getSnapshots()).slice(-45);
-    if (!request || SENSOR_INGESTION[request.sensorType].mode !== "CSV") return liveRows;
-    return mergeChartRows(liveRows, getCsvHistory(request.sensorType));
+    if (!request || SENSOR_INGESTION[request.sensorType].mode !== "Periodic") return liveRows;
+    return mergeChartRows(liveRows, getPeriodicHistory(request.sensorType));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request, tick]);
 
   if (!request || !seriesList || seriesList.length === 0) return null;
 
-  const isCsvSensor = SENSOR_INGESTION[request.sensorType].mode === "CSV";
+  const isPeriodicSensor = SENSOR_INGESTION[request.sensorType].mode === "Periodic";
 
   return (
     <div
@@ -519,9 +519,9 @@ export function SensorGraphPopup() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
           <span style={{ fontSize: "11px", opacity: 0.6 }}>
             {request.elementId}
-            {isCsvSensor && (
+            {isPeriodicSensor && (
               <span style={{ marginLeft: "8px", fontSize: "10px", color: "#8c6d1f", background: "#fff7e0", border: "1px solid #f0d989", borderRadius: "3px", padding: "1px 5px" }}>
-                📄 CSV (hourly) - updates on new file, not live
+                📄 Periodic (hourly) - updates on new batch, not live
               </span>
             )}
           </span>

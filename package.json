@@ -36,6 +36,8 @@
     "@itwin/unified-selection-react": "^1.0.0",
     "@itwin/web-viewer-react": "^5.0.0",
     "@itwin/webgl-compatibility": "^5.0.0",
+    "@microsoft/signalr": "^10.0.11",
+    "@microsoft/signalr-protocol-msgpack": "^10.0.11",
     "@tanstack/react-router": "^1.124.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -44,6 +46,7 @@
   },
   "devDependencies": {
     "@itwin/eslint-plugin": "^5.2.1",
+    "@playwright/test": "^1.62.1",
     "@types/node": "^22.15.27",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
@@ -52,6 +55,7 @@
     "eslint-plugin-react": "^7.37.5",
     "kill-port": "^2.0.1",
     "sass": "^1.89.2",
+    "tsx": "^4.23.5",
     "typescript": "~5.6.2",
     "vite": "^7.0.1",
     "vite-plugin-static-copy": "^3.1.0"

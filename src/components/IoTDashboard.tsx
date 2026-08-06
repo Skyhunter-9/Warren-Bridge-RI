@@ -19,10 +19,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import SensorService, {
-  getCsvHistory,
-  getLatestCsvRow,
+  getLatestPeriodicRow,
+  getPeriodicHistory,
   getSnapshots,
-  onCsvHistoryChanged,
+  onPeriodicHistoryChanged,
   onSnapshotsChanged,
   replaceSnapshots,
   SENSOR_INGESTION,
@@ -136,7 +136,9 @@ export const IoTDashboard: React.FC = () => {
   const [geophoneTimeframe, setGeophoneTimeframe] = useState('Real time');
   const [strainTimeframe, setStrainTimeframe] = useState('Real time');
   const [hydroTimeframe, setHydroTimeframe] = useState('Real time');
-  const [gnssTimeframe, setGnssTimeframe] = useState('Real time');
+  // "Real time" (45 seconds) would never show anything for GNSS, since it's Periodic-mode
+  // and only gets new data once an hour - default to a timeframe that can actually show it.
+  const [gnssTimeframe, setGnssTimeframe] = useState('all time');
   const [runoffTimeframe, setRunoffTimeframe] = useState('Real time');
   const [scourTimeframe, setScourTimeframe] = useState('Real time');
   const [waveTimeframe, setWaveTimeframe] = useState('Real time');
@@ -158,6 +160,7 @@ export const IoTDashboard: React.FC = () => {
       case 'last 7 Days': return now - 7 * 24 * 60 * 60 * 1000;
       case 'last 30 Days': return now - 30 * 24 * 60 * 60 * 1000;
       case 'last 1 Year': return now - 365 * 24 * 60 * 60 * 1000;
+      case 'all time': return 0; // epoch start - every real timestamp is >= this
       case 'Real time':
       default:
         return now - 45 * 1000; // Default view window of 45 seconds
@@ -180,36 +183,48 @@ export const IoTDashboard: React.FC = () => {
     return chartData.slice(-secondsOfHistory);
   };
 
-  // Merges the live buffer with any CSV-mode sensor types' downloaded history (see
+  // Merges the live buffer with any Periodic-mode sensor types' batched history (see
   // sensorIngestion.ts) into one Recharts-ready array, filtered to the same lookback window as
   // the live-only path above. Types still in API mode contribute nothing extra here (their
   // data is already in `chartData`/getFilteredChartData), so this is a safe drop-in
-  // replacement for getFilteredChartData on any card that might include a CSV-mode line.
+  // replacement for getFilteredChartData on any card that might include a Periodic-mode line.
+  //
+  // IMPORTANT: the live 1Hz snapshot buffer always contains a value for every SensorSnapshot
+  // field, every second, even for Periodic-mode types - SensorService.getLatestSnapshot()
+  // can't leave a field empty (SIMULATED mode fabricates it, REAL mode zero-fills it when the
+  // live vendor call is skipped). If a card's types are ALL Periodic-mode, we must skip the
+  // live buffer entirely here - otherwise real hourly readings get flooded with meaningless
+  // per-second noise from that fallback value, which is what caused GNSS charts to visibly
+  // "tick" every second instead of only updating once real data actually arrives.
   const getMergedChartData = (timeframe: string, types: SensorType[]) => {
-    const csvTypes = types.filter((t) => SENSOR_INGESTION[t].mode === "CSV");
-    if (csvTypes.length === 0) return getFilteredChartData(timeframe);
+    const periodicTypes = types.filter((t) => SENSOR_INGESTION[t].mode === "Periodic");
+    if (periodicTypes.length === 0) return getFilteredChartData(timeframe);
 
     const cutoff = getLookbackCutoff(timeframe);
-    const csvRows = csvTypes.flatMap((t) => getCsvHistory(t).filter((r) => r.timestamp >= cutoff));
-    return mergeChartRows(getFilteredChartData(timeframe), csvRows);
+    const periodicRows = periodicTypes.flatMap((t) => getPeriodicHistory(t).filter((r) => r.timestamp >= cutoff));
+
+    const stillHasApiTypes = types.some((t) => SENSOR_INGESTION[t].mode === "API");
+    if (!stillHasApiTypes) return mergeChartRows(periodicRows);
+
+    return mergeChartRows(getFilteredChartData(timeframe), periodicRows);
   };
 
-  // Reads a sensor type's most recently downloaded CSV value for `key` (falling back to the
-  // live snapshot's value if that type is in API mode, or if no CSV has landed yet) - used by
-  // the summary tiles above, which otherwise read straight off the 1Hz `latest` snapshot.
+  // Reads a sensor type's most recently fetched periodic value for `key` (falling back to the
+  // live snapshot's value if that type is in API mode, or if no periodic batch has landed yet) -
+  // used by the summary tiles above, which otherwise read straight off the 1Hz `latest` snapshot.
   const getLatestValue = (type: SensorType, key: string, fallback: number): number => {
-    if (SENSOR_INGESTION[type].mode !== "CSV") return fallback;
-    const value = getLatestCsvRow(type)?.[key];
+    if (SENSOR_INGESTION[type].mode !== "Periodic") return fallback;
+    const value = getLatestPeriodicRow(type)?.[key];
     return typeof value === "number" ? value : fallback;
   };
 
   // null when every listed type is in (the default) API mode, so the common case shows no
-  // badge at all - only sensors actually switched to CSV in sensorIngestion.ts's
+  // badge at all - only sensors actually switched to Periodic mode in sensorIngestion.ts's
   // SENSOR_INGESTION config get flagged.
   const modeLabel = (types: SensorType[]): string | null => {
     const modes = new Set(types.map((t) => SENSOR_INGESTION[t].mode));
     if (modes.size === 1 && modes.has("API")) return null;
-    return modes.size === 1 ? "📄 CSV (hourly)" : "📄+🔌 Mixed";
+    return modes.size === 1 ? "📄 Periodic (hourly)" : "📄+🔌 Mixed";
   };
 
   const modeBadgeStyle: React.CSSProperties = { fontSize: '10px', fontWeight: 'normal', color: '#8c6d1f', background: '#fff7e0', border: '1px solid #f0d989', borderRadius: '3px', padding: '1px 5px', marginLeft: '6px' };
@@ -221,12 +236,12 @@ export const IoTDashboard: React.FC = () => {
     return onSnapshotsChanged.addListener(() => setData(getSnapshots()));
   }, []);
 
-  // Forces a re-render whenever any CSV-mode sensor type's history changes (new hourly
-  // download merged in) - mirrors the onSnapshotsChanged listener above, but for
-  // sensorIngestion.ts's separate, non-1Hz CSV data path.
-  const [, setCsvTick] = useState(0);
+  // Forces a re-render whenever any Periodic-mode sensor type's history changes (new batch
+  // merged in) - mirrors the onSnapshotsChanged listener above, but for sensorIngestion.ts's
+  // separate, non-1Hz periodic data path.
+  const [, setPeriodicTick] = useState(0);
   useEffect(() => {
-    return onCsvHistoryChanged.addListener(() => setCsvTick((t) => t + 1));
+    return onPeriodicHistoryChanged.addListener(() => setPeriodicTick((t) => t + 1));
   }, []);
 
   // ======= Timeframe Trigger for real vs simulated data =======
@@ -321,8 +336,7 @@ export const IoTDashboard: React.FC = () => {
           </div>
           <div role="button" tabIndex={0} onClick={() => setExpandedSection('gnss')} onKeyDown={(e) => e.key === 'Enter' && setExpandedSection('gnss')} style={{ background: '#fff', padding: '12px', borderRadius: '6px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', cursor: 'pointer' }}>
             <div style={{ fontSize: '11px', color: '#777', textTransform: 'uppercase' }}>🛰️ GNSS Displacement (6 Nodes)</div>
-            <div style={{ fontSize: '13px', marginTop: '4px' }}><b>Node 1 Deflection:</b></div>
-            <div style={{ fontSize: '11px', color: '#555' }}>E: {latest.gnss[0]?.Easting || 0} in | N: {latest.gnss[0]?.Northing || 0} in</div>
+            <div style={{ fontSize: '13px', marginTop: '4px' }}><b>GNSS Sensors</b></div>
           </div>
         </div>
       )}

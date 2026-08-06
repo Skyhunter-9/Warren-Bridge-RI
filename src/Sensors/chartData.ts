@@ -26,13 +26,13 @@ export function buildChartData(snapshots: readonly SensorSnapshot[]) {
 }
 
 /**
- * Combines the live 1Hz buffer's flat rows with one or more CSV-sourced flat row arrays
- * (sensorIngestion.ts's getCsvHistory) into a single array a Recharts <LineChart> can read,
- * ordered by `timestamp`. Used whenever a chart card mixes an API-mode line with a CSV-mode
- * line (or is CSV-only) - see IoTDashboard.tsx and Sensor3DDisplay.tsx's SensorGraphPopup. Rows are kept as
- * separate entries rather than merged into one row per exact timestamp, since live and CSV
- * data essentially never land on the same instant - each <Line> just has a gap wherever its
- * own dataKey is missing on a given row, which Recharts renders fine.
+ * Combines the live 1Hz buffer's flat rows with one or more periodic-sourced flat row arrays
+ * (sensorIngestion.ts's getPeriodicHistory) into a single array a Recharts <LineChart> can read,
+ * ordered by `timestamp`. Used whenever a chart card mixes an API-mode line with a Periodic-mode
+ * line (or is Periodic-only) - see IoTDashboard.tsx and Sensor3DDisplay.tsx's SensorGraphPopup.
+ * Rows are kept as separate entries rather than merged into one row per exact timestamp, since
+ * live and periodic data essentially never land on the same instant - each <Line> just has a gap
+ * wherever its own dataKey is missing on a given row, which Recharts renders fine.
  */
 export function mergeChartRows(...rowGroups: Array<ReadonlyArray<Record<string, any>>>): Record<string, any>[] {
   return rowGroups.flat().sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));

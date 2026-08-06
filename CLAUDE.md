@@ -75,15 +75,19 @@ below instead of splitting it back out:
   is the data layer proper: `getMode()` switches on `VITE_SENSOR_MODE`; `generateSimulatedData()`
   fabricates deterministic sine/cosine-based telemetry; `fetchRealHardwareData()` calls vendor
   HTTP APIs in parallel with per-field fallback, falling back to simulated data entirely if the
-  whole batch throws. `SENSOR_INGESTION` is the per-type API-vs-CSV mode config (edit this to
-  switch a type to hourly CSV download instead of live polling), keyed by `SensorType` — this
-  includes `"weather"`, whose single-station marker has no per-node array but still needs the
-  same live-vs-CSV toggle every other sensor gets; `fetchRealHardwareData()` gates its weather
-  fetch the same per-field way it gates accel/geo/strain/gnss, so setting `weather: { mode: "CSV",
-  csvUrl: ... }` skips the live HTTP call entirely instead of always hitting
-  `VITE_WEATHER_STATION_URL`. The CSV parsing/merge/history functions (`getCsvHistory`,
-  `getLatestCsvRow`, etc.) and their own `onCsvHistoryChanged` BeEvent live here too. Finally,
-  `getSnapshots`/`onSnapshotsChanged` are the single app-wide 1/sec polling
+  whole batch throws. `SENSOR_INGESTION` is the per-type API-vs-Periodic mode config (edit this
+  to switch a type to a periodic batch pull instead of live polling — each type sets its own
+  `pollIntervalMs`, so different sensors can update at completely different rates), keyed by
+  `SensorType` — this includes `"weather"`, whose single-station marker has no per-node array but
+  still needs the same live-vs-Periodic toggle every other sensor gets; `fetchRealHardwareData()`
+  gates its weather fetch the same per-field way it gates accel/geo/strain/gnss, so setting
+  `weather: { mode: "Periodic", url: ... }` skips the live HTTP call entirely instead of always
+  hitting `VITE_WEATHER_STATION_URL`. The periodic parsing/merge/history functions
+  (`getPeriodicHistory`, `getLatestPeriodicRow`, etc.) and their own `onPeriodicHistoryChanged`
+  BeEvent live here too — the batches themselves are still CSV-formatted text under the hood
+  (`csvToFlatRows`/`parseCsv`), just not necessarily downloaded as literal files; a vendor can
+  serve that text however it wants (a static file, or a small server generating it on the fly).
+  Finally, `getSnapshots`/`onSnapshotsChanged` are the single app-wide 1/sec polling
   loop and snapshot buffer, started as an eager module-level singleton (same pattern as
   `selectionStorage.ts`) — exists so live data isn't tied to any one component's mount state, both
   the IoT Dashboard tab and marker-click popups read from this same buffer, and REAL mode only
@@ -117,7 +121,7 @@ below instead of splitting it back out:
   keys for Recharts; `getSensorSeries(sensorType, nodeIndex)` maps a specific sensor (by type + its
   0-based index within that type's `elementIds` array) to the chart series it corresponds to — this
   is the link between a clicked marker and the chart it opens; `mergeChartRows()` combines the live
-  buffer with CSV-sourced rows for CSV-mode sensor types.
+  buffer with periodic-sourced rows for Periodic-mode sensor types.
 - **`SensorInspectorTab.tsx`** — the "Sensor Station Registry" side-tab content: independently
   re-resolves every `SENSOR_GROUPS` Hex ID's world coordinates (via the same `resolveSensorPosition`
   `Sensor3DDisplay.tsx` uses) so you can see exactly where the app thinks each sensor is, grouped by

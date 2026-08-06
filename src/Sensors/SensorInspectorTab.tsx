@@ -100,7 +100,10 @@ export const SensorInspectorComponent = () => {
     <div style={{ padding: "16px", color: "var(--itwin-color-text)", display: "flex", flexDirection: "column", gap: "16px" }}>
       <h3>Sensor Station Registry</h3>
       <p style={{ fontSize: "12px", opacity: 0.7, margin: 0 }}>
-        Permanently configured directly inside your application code workspace.
+        This section contains all the sensors that are used in this project.  Each sensor is listed 
+        within its respective sensor group.  To locate the sensor in the 3D view just click on the name 
+        of the sensor of interest and the 3D display will automatically zoom to the element that the sensor 
+        is attached to for easy identification.
       </p> 
 
       

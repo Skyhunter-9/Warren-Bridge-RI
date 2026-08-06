@@ -12,6 +12,8 @@ import { createRoot } from "react-dom/client";
 import { RouterProvider } from "@tanstack/react-router";
 import { router } from "./components/Routes";
 
+
+
 // Fail fast with a clear message if required .env vars (OIDC auth settings) are missing,
 // rather than letting the app silently break later during sign-in.
 if (!import.meta.env.IMJS_AUTH_CLIENT_CLIENT_ID) {
