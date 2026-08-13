@@ -285,7 +285,7 @@ export const IoTDashboard: React.FC = () => {
 
   const latest = data[data.length - 1];
   // Cycled through (via `colors[i % colors.length]`) to give each of the 10 accelerometer/
-  // geophone nodes or 9 strain gauges a distinct, repeatable line color.
+  // geophone nodes or 8 strain gauges a distinct, repeatable line color.
   const colors = ['#ff4d4f', '#faad14', '#13c2c2', '#52c41a', '#1890ff', '#722ed1', '#eb2f96', '#2f54eb', '#fa8c16', '#a0d911'];
 
   // Per-card ingestion-mode badges (see modeLabel above) - computed once per render so both
@@ -335,7 +335,7 @@ export const IoTDashboard: React.FC = () => {
             <div style={{ fontSize: '11px', color: '#555' }}>WL1: {getLatestValue('waterVelocity', 'waterLevel_1', latest.waterLevel[0])} in | Scour1: {getLatestValue('scour', 'scour_1', latest.scour[0])} in</div>
           </div>
           <div role="button" tabIndex={0} onClick={() => setExpandedSection('gnss')} onKeyDown={(e) => e.key === 'Enter' && setExpandedSection('gnss')} style={{ background: '#fff', padding: '12px', borderRadius: '6px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', cursor: 'pointer' }}>
-            <div style={{ fontSize: '11px', color: '#777', textTransform: 'uppercase' }}>🛰️ GNSS Displacement (6 Nodes)</div>
+            <div style={{ fontSize: '11px', color: '#777', textTransform: 'uppercase' }}>🛰️ GNSS Displacement (4 Nodes)</div>
             <div style={{ fontSize: '13px', marginTop: '4px' }}><b>GNSS Sensors</b></div>
           </div>
         </div>
@@ -423,7 +423,7 @@ export const IoTDashboard: React.FC = () => {
           {/* 3. STRAIN GAUGE MATRIX CARD */}
           <div style={{ background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0', position: 'relative' }}>
             <h4 style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#2d3748' }}>
-              📐 Strain Gauge Matrix (All 9 Channels){' '}
+              📐 Strain Gauge Matrix (All 8 Channels){' '}
               <span
                 role="button"
                 tabIndex={0}
@@ -444,7 +444,7 @@ export const IoTDashboard: React.FC = () => {
                   <YAxis stroke="#718096" style={{ fontSize: '9px' }} domain={['auto','auto']} />
                   <Tooltip wrapperStyle={{ zIndex: 9999, pointerEvents: 'auto' }} content={<ScrollLockedTooltipContent />} />
                   <Legend iconType="plainline" wrapperStyle={{ fontSize: '10px', paddingTop: '4px' }} />
-                  {Array.from({ length: 9 }).map((_, i) => (
+                  {Array.from({ length: 8 }).map((_, i) => (
                     <Line key={i} name={`G${i+1}`} type="monotone" dataKey={`sg_${ i}`} stroke={colors[i % colors.length]} strokeWidth={1} dot={false} isAnimationActive={false} />
                   ))}
                 </LineChart>
@@ -570,7 +570,7 @@ export const IoTDashboard: React.FC = () => {
               </div>
             ))}
 
-            {expandedSection === 'strain' && Array.from({ length: 9 }).map((_, i) => (
+            {expandedSection === 'strain' && Array.from({ length: 8 }).map((_, i) => (
               <div key={i} style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
                 <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>📐 Gauge Channel {i + 1} (PSI) {strainMode && <span style={modeBadgeStyle}>{strainMode}</span>}</h5>
                 <ChartTimeframeDropdown value={strainTimeframe} onChange={setStrainTimeframe} />
@@ -586,23 +586,75 @@ export const IoTDashboard: React.FC = () => {
               </div>
             ))}
 
-            {expandedSection === 'gnss' && Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
-                <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🛰️ GNSS Node {i + 1} (in) {gnssMode && <span style={modeBadgeStyle}>{gnssMode}</span>}</h5>
-                <ChartTimeframeDropdown value={gnssTimeframe} onChange={setGnssTimeframe} />
-                  <div style={{ width: '100%', height: '180px',}}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={getMergedChartData(gnssTimeframe, ['gnss'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
-                      <Line name="E" type="monotone" dataKey={`gnss_${i}_E`} stroke="#52c41a" dot={false} isAnimationActive={false} />
-                      <Line name="N" type="monotone" dataKey={`gnss_${i}_N`} stroke="#13c2c2" dot={false} isAnimationActive={false} />
-                      <Line name="Z" type="monotone" dataKey={`gnss_${i}_Z`} stroke="#722ed1" dot={false} isAnimationActive={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
+            {expandedSection === 'gnss' && (
+              <>
+                <div style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
+                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🛰️ Combined Elevation (All 4 Nodes) {gnssMode && <span style={modeBadgeStyle}>{gnssMode}</span>}</h5>
+                  <ChartTimeframeDropdown value={gnssTimeframe} onChange={setGnssTimeframe} />
+                  <div style={{ width: '100%', height: '180px' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={getMergedChartData(gnssTimeframe, ['gnss'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
+                        {Array.from({ length: 4 }).map((_, i) => (
+                          <Line key={i} name={`N${i + 1}-Z`} type="monotone" dataKey={`gnss_${i}_Z`} stroke={colors[i % colors.length]} dot={false} isAnimationActive={false} connectNulls />
+                        ))}
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
-              </div>
-            ))}
+
+                <div style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
+                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🛰️ Combined Easting (All 4 Nodes) {gnssMode && <span style={modeBadgeStyle}>{gnssMode}</span>}</h5>
+                  <ChartTimeframeDropdown value={gnssTimeframe} onChange={setGnssTimeframe} />
+                  <div style={{ width: '100%', height: '180px' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={getMergedChartData(gnssTimeframe, ['gnss'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
+                        {Array.from({ length: 4 }).map((_, i) => (
+                          <Line key={i} name={`N${i + 1}-E`} type="monotone" dataKey={`gnss_${i}_E`} stroke={colors[i % colors.length]} dot={false} isAnimationActive={false} connectNulls />
+                        ))}
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                <div style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
+                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🛰️ Combined Northing (All 4 Nodes) {gnssMode && <span style={modeBadgeStyle}>{gnssMode}</span>}</h5>
+                  <ChartTimeframeDropdown value={gnssTimeframe} onChange={setGnssTimeframe} />
+                  <div style={{ width: '100%', height: '180px' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={getMergedChartData(gnssTimeframe, ['gnss'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
+                        {Array.from({ length: 4 }).map((_, i) => (
+                          <Line key={i} name={`N${i + 1}-N`} type="monotone" dataKey={`gnss_${i}_N`} stroke={colors[i % colors.length]} dot={false} isAnimationActive={false} connectNulls />
+                        ))}
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
+                    <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🛰️ GNSS Node {i + 1} (in) {gnssMode && <span style={modeBadgeStyle}>{gnssMode}</span>}</h5>
+                    <ChartTimeframeDropdown value={gnssTimeframe} onChange={setGnssTimeframe} />
+                      <div style={{ width: '100%', height: '180px',}}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={getMergedChartData(gnssTimeframe, ['gnss'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                          <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
+                          <Line name="E" type="monotone" dataKey={`gnss_${i}_E`} stroke="#52c41a" dot={false} isAnimationActive={false} connectNulls />
+                          <Line name="N" type="monotone" dataKey={`gnss_${i}_N`} stroke="#13c2c2" dot={false} isAnimationActive={false} connectNulls />
+                          <Line name="Z" type="monotone" dataKey={`gnss_${i}_Z`} stroke="#722ed1" dot={false} isAnimationActive={false} connectNulls />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
 
             {expandedSection === 'hydro' && (
               <>
@@ -621,7 +673,7 @@ export const IoTDashboard: React.FC = () => {
                   </div>
                 </div>
                 <div style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
-                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🌊 Water Runoff Stream Velocity {runoffMode && <span style={modeBadgeStyle}>{runoffMode}</span>}</h5>
+                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🌊 Flow Sensor - Stream Velocity {runoffMode && <span style={modeBadgeStyle}>{runoffMode}</span>}</h5>
                   <ChartTimeframeDropdown value={runoffTimeframe} onChange={setRunoffTimeframe} />
                   <div style={{ width: '100%', height: '180px',}}>
                     <ResponsiveContainer width="100%" height="100%">
@@ -648,7 +700,7 @@ export const IoTDashboard: React.FC = () => {
                   </div>
                 </div>
                 <div style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
-                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>📡 Wave Profile (Radar) {waveMode && <span style={modeBadgeStyle}>{waveMode}</span>}</h5>
+                  <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>📡 Radar Wave Profile {waveMode && <span style={modeBadgeStyle}>{waveMode}</span>}</h5>
                   <ChartTimeframeDropdown value={waveTimeframe} onChange={setWaveTimeframe} />
                   <div style={{ width: '100%', height: '180px',}}>
                     <ResponsiveContainer width="100%" height="100%">

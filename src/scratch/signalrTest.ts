@@ -1,3 +1,7 @@
+//how to run:
+// npx tsx src/scratch/signalrTest.ts
+
+
 import { HubConnectionBuilder } from "@microsoft/signalr";
 import { MessagePackHubProtocol } from "@microsoft/signalr-protocol-msgpack"
 

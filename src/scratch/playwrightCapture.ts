@@ -111,12 +111,19 @@ async function main() {
 
     // eslint-disable-next-line no-console
     console.log("Resumed. Current URLs:", zPage.url(), ePage.url(), nPage.url());
-    await zPage.waitForTimeout(90000);
-    // eslint-disable-next-line no-console
-    console.log(`Accumulated ${gnssRows.size} GNSS rows.`);
-    // eslint-disable-next-line no-console
-    console.log("Done waiting");
-    await browser.close();
+
+    //reloads the logged in tab every 30 minutes to update data in dashboard
+    const RELOAD_INTERVAL_MS = 1 * 60 * 1000; // 1 minute for test
+    setInterval(() => {
+        // eslint-disable-next-line no-console
+        console.log("Reloading logged-in tab to refresh data...");
+        // eslint-disable-next-line no-console
+        zPage.reload().catch((err) => console.error("Failed to reload Z page:", err));
+        // eslint-disable-next-line no-console
+        ePage.reload().catch((err) => console.error("Failed to reload E page:", err));
+        // eslint-disable-next-line no-console
+        nPage.reload().catch((err) => console.error("Failed to reload N page:", err));
+    }, RELOAD_INTERVAL_MS);
 }
 
 // can't use main(); need a catch because async function main()

@@ -94,13 +94,24 @@ below instead of splitting it back out:
   makes one round of vendor calls per second no matter how many consumers are watching.
 - **`Sensor3DDisplay.tsx`** — everything about showing sensors *in the 3D view* and reacting to a
   click on one. `SENSOR_GROUPS` is the single source of truth for sensor types (gnss,
-  accelerometer, strainGauge, waterVelocity, waveRadar, scour, weather), each with a color, icon
-  URL, an `expectedCount`, and an `elementIds` array of real element Hex IDs. **This is the file to
+  accelerometer, strainGauge, waterVelocity, waveRadar, scour, weather, camera), each with a
+  color, icon URL, an `expectedCount`, and an `elementIds` array of real element Hex IDs. Note
+  `waterVelocity`/`waveRadar` are the internal `SensorType` identifiers (unchanged, to limit
+  rename blast radius through `sensorIngestion.ts`/`chartData.ts`) but display as "Flow Sensor"/
+  "Radar Wave Profile" everywhere user-facing — see each group's `label`. **This is the file to
   edit to add/remove physical sensors** — grab a Hex ID via the Developer Tab and paste it into the
-  right group's array (weather's `elementIds` starts empty — add the weather station's Hex ID the
+  right group's array (weather's/camera's `elementIds` start empty — add each one's Hex ID the
   same way). Each entry can also set an optional `name` (e.g. `"Reference GNSS"`) shown by the
   Sensor Station Registry tab instead of the raw Hex ID — see `getEntryName()`; entries without
-  one fall back to a generic "`<group label> <position>`" name. `resolveSensorPosition()` resolves
+  one fall back to a generic "`<group label> <position>`" name. An entry can also set
+  `noData: true` (see `getEntryNoData()`) for a sensor that has a real physical marker but no
+  data feeding it — either by design (Reference GNSS, the baseline the other 4 GNSS nodes are
+  measured relative to, so it never produces its own displacement reading) or because no
+  ingestion path exists yet (camera — no image/video display is built, every camera entry
+  should stay `noData: true` until that changes). Clicking a `noData` marker does nothing
+  instead of opening an empty/broken graph popup (see `ElementIconMarker.onMouseButton`), and
+  Reference GNSS is excluded from IoTDashboard.tsx's GNSS node loops (which only cover the 4
+  data-producing nodes, nodeIndex 0-3). `resolveSensorPosition()` resolves
   an element ID to its real world-space marker
   position — `placement.origin` alone is *not* reliable (can sit at a local/model origin far from
   the visible geometry), so this transforms the element's own bbox through its placement via

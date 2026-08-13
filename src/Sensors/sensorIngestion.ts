@@ -166,8 +166,10 @@ export class SensorService {
         y: mmToIn(Math.cos(t / 1100 + i) * 3 + 1),
         z: mmToIn(Math.sin(t / 1300 + i) * 2 + 0.5)
       })),
-      strainGauges: Array.from({ length: 9 }, (_, i) => usToPsi(120 + Math.sin(t / 3000 + i) * 8 + 2)),
-      gnss: Array.from({ length: 6 }, (_, i) => ({
+      strainGauges: Array.from({ length: 8 }, (_, i) => usToPsi(120 + Math.sin(t / 3000 + i) * 8 + 2)),
+      // 4 data-producing nodes - Reference GNSS (Sensor3DDisplay.tsx's SENSOR_GROUPS 5th gnss
+      // entry) is noData: true and never gets its own reading, so it's not included here.
+      gnss: Array.from({ length: 4 }, (_, i) => ({
         Easting: mmToIn(Math.sin(t / 5000 + i) * 3),
         Northing: mmToIn(Math.cos(t / 5000 + i) * 3),
         Elevation: mmToIn(Math.sin(t / 10000 + i) * 5)
@@ -267,14 +269,16 @@ export class SensorService {
           z: device.z
         })) : Array(10).fill({ x: 0, y: 0, z: 0 }),
 
-        strainGauges: strainData ? Array.from({ length: 9 }, (_, i) => strainData[`SG_${String(i+1).padStart(2, '0')}`] || 0)
-                                 : Array(9).fill(0),
+        strainGauges: strainData ? Array.from({ length: 8 }, (_, i) => strainData[`SG_${String(i+1).padStart(2, '0')}`] || 0)
+                                 : Array(8).fill(0),
 
+        // 4 data-producing nodes - Reference GNSS never produces its own reading (see the
+        // matching comment in generateSimulatedData above).
         gnss: gnssData ? gnssData.devices.map((g: any) => ({
           Easting: g.easting,
           Northing: g.northing,
           Elevation: g.elevation
-        })) : Array(6).fill({ Easting: 0, Northing: 0, Elevation: 0 }),
+        })) : Array(4).fill({ Easting: 0, Northing: 0, Elevation: 0 }),
 
         waterLevel: hydroData ? [hydroData.upstreamSensor, hydroData.downstreamSensor] : [184.8, 184.8],
         waterVelocity: hydroData ? hydroData.flowVelocityMph : 1.2,
@@ -361,6 +365,12 @@ export const SENSOR_INGESTION: Record<SensorType, IngestionSettings> = {
   waveRadar: { mode: "API" },
   scour: { mode: "API" },
   weather: { mode: "API" },
+  // Placeholder only - camera has no data ingestion path yet (see Sensor3DDisplay.tsx's
+  // camera SENSOR_GROUPS entry, all noData: true), this entry just satisfies
+  // Record<SensorType, ...>. "API" mode is a no-op here since fetchRealHardwareData() below
+  // never fetches a camera field, and the Periodic-eager-singleton loop skips anything not
+  // set to "Periodic".
+  camera: { mode: "API" },
 };
 
 // ===================================================================================
@@ -379,9 +389,10 @@ export const SENSOR_INGESTION: Record<SensorType, IngestionSettings> = {
 // a "timestamp" column (anything Date.parse() can read, e.g. ISO 8601) plus one column per chart
 // data key that type owns - i.e. the exact same flat key names chartData.ts's
 // buildChartData()/getSensorSeries() already use, so no extra field-mapping layer is needed:
-//   gnss:           gnss_0_E, gnss_0_N, gnss_0_Z, gnss_1_E, ... (up to gnss_5_*)
+//   gnss:           gnss_0_E, gnss_0_N, gnss_0_Z, gnss_1_E, ... (up to gnss_3_*, the 4
+//                   data-producing nodes - Reference GNSS is noData: true and has none)
 //   accelerometer:  acc_0_X, acc_0_Y, acc_0_Z, ... (up to acc_9_*) + geo_0_X, ... (paired geophone)
-//   strainGauge:    sg_0, sg_1, ... sg_8
+//   strainGauge:    sg_0, sg_1, ... sg_7
 //   waterVelocity:  waterVelocity, waterLevel_1 (its co-located water level reading)
 //   waveRadar:      waveHeight, waterLevel_2 (its co-located water level reading)
 //   scour:          scour_1, scour_2
@@ -451,6 +462,12 @@ function csvToFlatRows(text: string): FlatCsvRow[] {
     headers.forEach((header, i) => {
       if (i === timestampCol) return;
       const raw = row[i];
+      // An empty cell means that sensor had no reading at this timestamp (see buildCsvText's
+      // CSV-column-list logic in playwrightCapture.ts) - leave this field out of the row
+      // entirely rather than writing an empty string. Recharts treats a genuinely missing
+      // field as "no data point here, leave a gap"; an empty string gets coerced to 0 when
+      // plotted, silently turning a missing reading into a fake zero-value point.
+      if (raw === "") return;
       const num = parseFloat(raw);
       flat[header] = Number.isNaN(num) ? raw : num;
     });

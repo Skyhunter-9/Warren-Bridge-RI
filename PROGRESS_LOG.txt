@@ -1,0 +1,443 @@
+================================================================================
+WARREN BRIDGE RI - PROJECT PROGRESS LOG
+================================================================================
+
+HOW TO USE / UPDATE THIS LOG
+--------------------------------------------------------------------------------
+- One entry per work session/date, in chronological order (oldest at top, newest
+  appended at the bottom).
+- Each entry has three sections: PROGRESS MADE, PROBLEMS & REMEDIATIONS, and
+  (when relevant) NOTES / OPEN ITEMS carried into future sessions.
+- Dates are based on the assistant's own session date markers and message
+  ordering. Everything from 2026-07-30 and earlier is reconstructed from a
+  summarized record of several combined work sessions, so day-boundaries in
+  that section are approximate. From 2026-08-04 onward, dates are based on
+  explicit same-session date-change markers and should be accurate.
+- Keep new entries in this same format so the log stays easy to scan.
+
+================================================================================
+DATE: 2026-07-30 AND EARLIER
+================================================================================
+
+PROGRESS MADE:
+- Built a Python signal-processing backend (python/) separate from the main
+  npm/Vite app: geophone velocity-to-displacement recovery script
+  (geophonetest/displacement.py) with demo (synthetic) and live (real CSV)
+  modes, plus voltage-to-velocity conversion.
+- Connected Python to the TypeScript dashboard via a FastAPI backend
+  (python/api/) and a generalized, reusable pattern on both sides:
+  BufferedSeries (Python) and createProcessingStore/ProcessingLineChart (TS),
+  so future "result scripts" only need a generate()/process() pair, not
+  bespoke plumbing.
+- Added a timeframe dropdown to Python-backed charts, which required making
+  the Python API stateful (a persistent, growing buffer instead of a fixed
+  window per request).
+- Renamed VITE_GEOPHONE_API_URL to VITE_PYTHON_API_URL to reflect that one
+  backend now serves multiple result scripts, not just geophone.
+- Created a new "Processed Results" tab, separate from the IoT Dashboard tab,
+  specifically for Python-computed results (kept apart from raw/simulated
+  sensor charts).
+- Generated a synthetic sample_data.csv for the user's own in-progress
+  accelerometers.py FFT script and iteratively reviewed/explained (not
+  edited, per explicit instruction) bugs in that script: path handling,
+  column-name mismatches, plotting complex FFT output instead of magnitude,
+  wrong x-axis (time instead of frequency), missing `d=` sample-spacing
+  argument to rfftfreq, and misuse of `sharex=True`.
+- Reorganized src/Sensors/ from 11 files down to 4, grouped by
+  responsibility: sensorIngestion.ts (data in), Sensor3DDisplay.tsx (3D
+  markers + click-to-popup), chartData.ts (IoT tab chart shaping),
+  SensorInspectorTab.tsx (Sensor Station Registry tab). Swept the rest of the
+  repo (IoTDashboard.tsx, App.tsx, Developer_Tab.tsx, radar files, CLAUDE.md)
+  for now-stale references to the old file names.
+- Wired the weather station into the same live/CSV ("Periodic," see later
+  rename) ingestion toggle every other sensor type already had - previously
+  weather was hardcoded to always poll live.
+- Added a real 3D marker for the weather station: new "weather" SensorType,
+  SENSOR_GROUPS entry, a new purple marker icon, and a 5-series chartData
+  breakdown (wind speed, temp, pressure, humidity, heat index) so clicking the
+  marker pops up the same charts as the dashboard.
+- Added human-readable sensor names: a new optional `name` field on
+  SensorPlacement, a getEntryName() helper with a sensible generic fallback,
+  and promoted the GNSS group's existing "//GNSS 1" style comments into real
+  `name:` values. Sensor Station Registry tab now shows names as the primary
+  label instead of raw Hex IDs.
+- Installed kill-port as a devDependency and fixed the project's existing
+  `npm run stop` script, which had invalid syntax ("kill -port 3000" instead
+  of "kill-port 3000") and had never actually worked.
+
+PROBLEMS & REMEDIATIONS:
+1. Problem: High-pass filtering geophone velocity data used the plain
+   transfer-function Butterworth form, which is numerically unstable at low
+   cutoff-to-sample-rate ratios.
+   Fix: Switched to second-order-sections form (`output="sos"` +
+   `sosfiltfilt`).
+2. Problem: Regenerating a fresh synthetic window per API request caused
+   already-displayed history to silently rewrite itself (unseeded noise
+   produced different values for the same past instant on every poll).
+   Fix: Built BufferedSeries as a persistent, append-only buffer - only ever
+   extended with genuinely new samples, never regenerated from scratch.
+3. Problem: accelerometers.py's FFT logic had five separate bugs (see above).
+   Fix: All explained and given as exact line-level instructions per the
+   user's explicit "don't change it yet, just tell me" instruction - not
+   edited directly by the assistant at this stage.
+
+================================================================================
+DATE: 2026-08-04
+================================================================================
+
+PROGRESS MADE:
+- Clarified the actual goal: a live capture pipeline that intercepts
+  structural-monitoring data from a third-party vendor site (GeoCloud /
+  geo-instruments.com) and feeds it into the dashboard, since the vendor
+  doesn't offer a public API. Established a "teach me, don't just build it"
+  collaboration mode with a running, repeatedly-reposted step-by-step
+  syllabus.
+- Installed Playwright (@playwright/test) and Chromium, and separately
+  @microsoft/signalr / @microsoft/signalr-protocol-msgpack after identifying
+  (via F12 DevTools) that GeoCloud's live data arrives over SignalR using the
+  MessagePack sub-protocol.
+- Attempted a direct browser-side SignalR connection first (the simplest
+  option) - hit a CORS wall specific to a redirect during the connection's
+  preflight check.
+- Pivoted to running the same connection logic as a standalone Node script
+  (installed tsx as a devDependency to run TypeScript directly) - the browser
+  CORS restriction doesn't apply outside a browser, which got past that wall
+  and revealed the real blocker underneath: a 401 Unauthorized response.
+- Investigated the site's real auth mechanism by inspecting a successful,
+  logged-in request's headers - confirmed cookie-based ASP.NET Core Identity
+  authentication (not a bearer token), which can't be faked from a bare
+  script and requires an actual browser login.
+- Rebuilt the approach around Playwright: launched a real, visible Chromium
+  browser, used page.pause() to hand control to the user for a one-time
+  manual login, then resumed the script programmatically.
+- Attached page.on("websocket")/framereceived listeners and confirmed real
+  WebSocket frames were arriving once navigation was pointed directly at a
+  graph URL instead of the site's Projects listing page.
+- Successfully decoded real SignalR messages using
+  MessagePackHubProtocol.parseMessages() - confirmed the hub method name
+  ("UpdateGraph"), the SignalR message-type numbering (1=Invocation,
+  3=Completion, 6=Ping), and that GeoCloud pushes an entire week of hourly
+  historical readings per update, not a single live point.
+- Based on that hourly/bulk-historical shape, decided this data belongs in
+  the app's existing CSV-style batch-merge ingestion pattern rather than the
+  live 1Hz snapshot buffer.
+- Discovered Easting and Northing readings live on two separate graphs from
+  the Z-axis one already captured, and found those graph URLs too.
+- Designed a pattern for watching all three axis-graphs with a single login:
+  one shared Playwright browser context, three separate pages (tabs), all
+  authenticated together once login succeeds on any one of them.
+
+PROBLEMS & REMEDIATIONS:
+1. Problem: Browser-side SignalR connection blocked by CORS
+   ("Redirect is not allowed for a preflight request").
+   Fix: Ran the identical connection code as a plain Node script instead,
+   which isn't subject to browser CORS rules at all.
+2. Problem: Node script got 401 Unauthorized - no browser session to
+   authenticate with.
+   Fix: Identified the site uses cookie-based session auth (not a token) and
+   switched approach to a real, Playwright-driven browser login.
+3. Problem: Top-level `await` failed ("not supported with the cjs output
+   format") when running the Playwright script via tsx.
+   Fix: Wrapped the script body in `async function main() { ... }` and called
+   it at the bottom instead of using bare top-level await.
+4. Problem: ESLint's no-floating-promises rule flagged the bare `main();`
+   call at the bottom of the script.
+   Fix: Changed to `main().catch((err) => console.error(...))` so errors
+   inside main() are actually surfaced instead of becoming a silent
+   unhandled rejection.
+5. Problem: The capture script only ever landed on GeoCloud's generic
+   Projects page, never actually opening a graph, so no WebSocket connection
+   was ever observed.
+   Fix: Pointed `page.goto(...)` directly at the specific graph's own deep
+   URL (discovered via the request headers), instead of the site root -
+   ASP.NET's login-redirect flow correctly bounces back to that URL after
+   login.
+
+================================================================================
+DATE: 2026-08-05
+================================================================================
+
+PROGRESS MADE:
+- Extended the capture script to watch all three axis-graphs (Z, Easting,
+  Northing) simultaneously, each in its own Playwright page, all sharing one
+  authenticated browser context so only one manual login is needed per run.
+- Confirmed GeoCloud's own GNSS numbering (GNSS02, GNSS03, GNSS04) lines up
+  1-to-1 with the app's own SENSOR_GROUPS.gnss ordering ("GNSS 2", "GNSS 3",
+  "GNSS 4").
+- Designed and wrote the merge logic (`ingestUpdateGraphMessage`): parses
+  each incoming UpdateGraph message's sensor names with a regex, converts
+  GeoCloud's 1-based numbering into the app's 0-based node index, and
+  accumulates readings into a Map of rows keyed by timestamp so all three
+  axes end up combined into one row per moment, matching the app's
+  `gnss_<nodeIndex>_<axis>` field-naming contract.
+- Wired the merge function into the live frame-decoding path (only for real
+  "UpdateGraph" Invocation messages, not pings/completions) and confirmed it
+  actually works: 168 accumulated rows (7 days x 24 hours), an exact match
+  for the real capture window.
+
+PROBLEMS & REMEDIATIONS:
+1. Problem: `noopLogger` used before it was actually declared - the parseMessages
+   helper referenced a name that only existed as a typo (`constnooplogger`,
+   missing a space) so nothing was ever really declared under the name being used.
+   Fix: Corrected the declaration syntax.
+2. Problem: A method-name typo, `pareseMessages`, and a missing import of
+   `MessagePackHubProtocol` caused further "cannot find name" errors.
+   Fix: Corrected the typo and added the missing import.
+3. Problem: TypeScript flagged the Buffer-to-ArrayBuffer conversion needed
+   before decoding, since `Buffer.buffer` is typed as `ArrayBuffer |
+   SharedArrayBuffer`, not plainly `ArrayBuffer`.
+   Fix: Added an `as ArrayBuffer` type assertion, since a SharedArrayBuffer
+   genuinely never occurs in this context - a legitimate use of a type
+   assertion, not a workaround for a real bug.
+4. Problem: ESLint's no-unnecessary-type-assertion rule then flagged that
+   same assertion as pointless, contradicting the real compiler error that
+   required it.
+   Fix: Identified this as a known blind spot where ESLint's own type
+   inference (via a shared @itwin/eslint-plugin preset) disagrees with the
+   real TypeScript compiler; kept the assertion (required for the actual
+   build to succeed) and silenced just that one ESLint rule with a disable
+   comment.
+5. Problem: The very first captured frame threw "Incomplete message" from
+   the MessagePack decoder.
+   Fix: Wrapped frame parsing in try/catch so one bad frame doesn't crash the
+   whole capture session; confirmed via testing this was a harmless one-time
+   startup artifact, not a systemic fragmentation problem worth building
+   complex frame-reassembly logic for.
+6. Problem: When watching all three graphs at once, only one tab (whichever
+   the user happened to log into) ever successfully authenticated - the
+   other two stayed stuck on their own login-redirect pages forever, since
+   logging in on one tab doesn't retroactively re-navigate tabs that already
+   loaded a stale page before the login happened.
+   Fix: Restructured the script to open only the Z tab first, log in through
+   it, and only open the E and N tabs afterward - by then the session cookie
+   is already valid, so their first navigation succeeds without ever hitting
+   a login redirect.
+
+================================================================================
+DATE: 2026-08-06
+================================================================================
+
+PROGRESS MADE:
+- Renamed the app's "CSV" ingestion mode to "Periodic" across
+  sensorIngestion.ts, IoTDashboard.tsx, chartData.ts, Sensor3DDisplay.tsx, and
+  CLAUDE.md, to remove the misleading implication that this mode requires
+  downloading files - it never did; it's a periodic-fetch-and-merge pattern
+  that happens to use CSV-formatted text as its wire format. Kept the actual
+  CSV text-parsing utilities (parseCsv/csvToFlatRows/FlatCsvRow) named as-is,
+  since that part of the description remains accurate.
+- Built a small standalone HTTP server (Node's built-in `http` module, no new
+  dependency) inside the capture script, generating CSV-formatted text live
+  from the in-memory accumulated GNSS rows on every request - no files are
+  ever written to disk.
+- Wired the real app's SENSOR_INGESTION.gnss entry to point at that server
+  (mode: "Periodic", url: "http://localhost:4000", pollIntervalMs: 1 hour).
+- Confirmed (via direct testing, not just inspection) that the capture
+  script's server was serving real, correctly-shaped GNSS data end to end.
+- Fixed a chart-flooding bug: the live 1Hz snapshot buffer always contains a
+  value for every sensor field, every second, even for Periodic-mode types
+  (SensorService can't leave a field empty) - this was flooding
+  Periodic-mode charts with meaningless per-second noise alongside the real
+  hourly data. getMergedChartData now skips the live buffer entirely when a
+  chart's types are all Periodic-mode.
+- Found and fixed a much deeper, pre-existing bug: vite.config.mts had
+  customized Vite's `envPrefix` to "IMJS_" only (for Bentley's own auth
+  variables), which silently replaced Vite's default "VITE_" prefix instead
+  of adding to it - meaning every `VITE_`-prefixed .env variable
+  (VITE_SENSOR_MODE, all the vendor URLs) had never actually reached the
+  browser at all, project-wide, since the sensor-mode feature was first
+  built. Fixed by setting envPrefix to `["IMJS_", "VITE_"]`.
+- Added a CORS header (`Access-Control-Allow-Origin: *`) to the capture
+  script's own local server - it's a different port (4000) than the
+  dashboard (3000), which counts as a different origin under browser CORS
+  rules, the same category of problem as the original GeoCloud CORS wall,
+  just against the user's own local server this time.
+- Found and fixed a genuinely broken "all time" chart timeframe option:
+  `getLookbackCutoff` had a case for every other timeframe except "all
+  time," which silently fell through to the same 45-second default as "Real
+  time" - meaning selecting "All time" had never actually shown all
+  historical data, for any sensor type, the whole time. Added a real case
+  for it, and changed GNSS's default timeframe from "Real time" (useless for
+  hourly data) to "all time".
+- Fixed a chart hover/tooltip bug: periodic data's x-axis label
+  (`time: new Date(timestamp).toLocaleTimeString(...)`) only showed
+  hour:minute:second, discarding the date - meaning the same label
+  ("07:00:00") repeated once per day across a week of data, which broke
+  Recharts' hover tracking past the first day and left the axis showing no
+  date information. Fixed to include the date in the label.
+- Polished the GNSS summary tile: removed the constantly-ticking E/N
+  readout, retitled "Node 1 Deflection:" to "GNSS Sensors".
+- Added temporary `[periodic]` diagnostic console logging to
+  sensorIngestion.ts's periodic-fetch code path to definitively confirm
+  (rather than guess from an ambiguous Network tab) exactly where the
+  ingestion pipeline stood at each step - to be removed once everything is
+  fully confirmed stable.
+
+PROBLEMS & REMEDIATIONS:
+1. Problem: After the rename, `main()`'s temporary diagnostic-and-render
+   sequence still needed a manual .env edit and a full dev-server restart to
+   pick up VITE_SENSOR_MODE=REAL - .env values are only read once, at
+   process start, not live.
+   Fix: Walked through stopping and restarting `npm start` correctly, and
+   separately confirmed no competing .env.local file existed.
+2. Problem: GNSS charts came up completely blank even after the mode switch
+   and a real restart.
+   Fix: Traced this to two stacked causes - (a) the vite.config.mts envPrefix
+   bug above, meaning REAL mode was never truly active in the browser at
+   all, and (b) once that was fixed, a missing CORS header on the capture
+   script's own server, blocking the dashboard's fetch to it. Fixed both.
+3. Problem: Even after both fixes, the dashboard still appeared to be
+   running on simulated data.
+   Fix: Directly inspected running Node processes and listening ports
+   (rather than relying solely on manual restarts) to confirm the dev server
+   was genuinely fresh and correctly bound to port 3000; separately queried
+   the capture server directly (bypassing the browser) to confirm it was
+   serving correct, real, CORS-enabled data - isolating the remaining
+   problem to the browser side specifically.
+4. Problem: Diagnosing purely from an ambiguous, filtered Network tab wasn't
+   converging on an answer.
+   Fix: Added direct, unambiguous console logging at every decision point in
+   the ingestion code path, which definitively confirmed the full pipeline
+   (REAL mode active, GNSS in Periodic mode, fetch succeeding with status
+   200, 169 rows parsed) was actually working correctly end to end.
+5. Problem: Despite the pipeline being proven correct, GNSS charts still
+   looked blank - turned out to be a display-layer issue, not a data issue:
+   the default "Real time" (45-second) timeframe can never show hourly data,
+   and "All time" - which should have fixed that - turned out to be
+   secretly broken too (see PROGRESS MADE above).
+   Fix: Implemented both fixes described above (real "all time" case,
+   GNSS's sensible default timeframe).
+6. Problem: Once data was visible, mouse hover/tooltip tracking only worked
+   for the first day's worth of points, and the x-axis only ever showed
+   hours, never dates.
+   Fix: Root-caused to the same field (see PROGRESS MADE above: date-less
+   time labels colliding across days) and fixed at the source.
+
+NOTES / OPEN ITEMS CARRIED FORWARD:
+- The temporary `[periodic]` diagnostic console.log statements in
+  sensorIngestion.ts should be removed once GNSS ingestion is confirmed
+  fully stable going forward.
+- fetchRealHardwareData()'s use of `Promise.all(...)` for the live vendor
+  fetches means one dead/unreachable vendor URL currently fails the *entire*
+  snapshot back to fully simulated data, contradicting its own documented
+  intent of graceful per-field fallback. Not yet fixed - noted as a real,
+  separate bug to address later (likely needs `Promise.allSettled` instead).
+- Every non-GNSS "API"-mode sensor type (accelerometer, strain gauge, water
+  velocity, wave radar, scour, and weather's fallback path) still points at
+  placeholder LAN IPs in .env that don't exist, so they will continue to
+  correctly fall back to simulated data until real vendor endpoints are
+  configured - expected, not a bug.
+- `src/scratch/playwrightCapture.ts` is no longer disposable scratch code -
+  it must be kept running continuously (`npx tsx src/scratch/playwrightCapture.ts`,
+  logged into GeoCloud) alongside `npm start` for GNSS to have any live data
+  source at all. Worth relocating out of `src/scratch/` into a more
+  permanent home at some point, purely for clarity - not urgent.
+
+================================================================================
+DATE: 2026-08-07 THROUGH 2026-08-13 (day-boundaries within this range are
+approximate - reconstructed from session content, not explicit date markers)
+================================================================================
+
+PROGRESS MADE:
+- Added 3 new combined GNSS charts to the exploded GNSS view (Combined
+  Elevation/Easting/Northing, all nodes overlaid on one chart each), taught
+  step-by-step per the user's "don't do it for me" request, then handed over
+  as complete corrected code after a couple of the user's own syntax attempts
+  (misplaced React Fragment, missing closing bracket) - user successfully got
+  these compiling and rendering (confirmed later when this session read the
+  file back).
+- Fixed a real data-integrity bug in csvToFlatRows (sensorIngestion.ts): a
+  missing sensor reading in a periodic CSV batch (empty cell) was being
+  written into the flattened row as an empty string, which Recharts silently
+  coerced to 0 when plotting - producing a fake zero-dip instead of a genuine
+  gap. Fixed by leaving the field out of the row entirely when the cell is
+  empty.
+- Applied `connectNulls` to the GNSS chart lines (user's own edit) so the
+  line stays visually continuous across a genuine data gap instead of
+  breaking, while still leaving the underlying point missing (not zero).
+- Diagnosed an apparent 1-hour data lag between GeoCloud's site and the
+  dashboard (GeoCloud had a 1pm point the dashboard didn't). Root-caused
+  (confirmed by the user restarting both the capture script and the browser,
+  which fixed it) to GeoCloud only pushing fresh SignalR data on page load,
+  not continuously to an already-open tab.
+- Added an auto-reload to playwrightCapture.ts: all three watched graph pages
+  now reload on a timer (30 minutes in normal use) so GeoCloud is forced to
+  push fresh data periodically without requiring a manual restart.
+- Updated the sensor inventory app-wide to match the real, current hardware
+  plan:
+    - Accelerometer/Geophones: unchanged (10).
+    - Strain Gauges: expectedCount 9 -> 8 (bridge-only count; the "+4
+      potentially later" note was explicitly deferred, not implemented).
+    - GNSS: kept all 5 SENSOR_GROUPS entries (4 numbered + Reference), but
+      Reference GNSS is now marked `noData: true` - it keeps its 3D
+      marker/icon (it's a real physical unit on the bridge) but produces no
+      chart data and clicking it no longer opens a popup. All GNSS chart
+      loops (per-node exploded view + the 3 combined charts added earlier)
+      now iterate 4 nodes instead of 6, matching the actual data-producing
+      count; simulated/real-hardware GNSS data generation also switched from
+      6 fabricated nodes to 4.
+    - Water Velocity -> renamed (display label + chart/popup titles only,
+      not the internal `waterVelocity` SensorType identifier, to avoid a
+      much larger blast-radius rename through sensorIngestion.ts/
+      chartData.ts) to "Flow Sensor" throughout.
+    - Wave Radar -> renamed the same way to "Radar Wave Profile" (this is
+      the SENSOR_GROUPS `waveRadar` marker/chart type, co-located with the
+      2nd water-level reading - not the same thing as the separate Geolux
+      LX80-O "Wave Radar Signal"/"Wave Energy Spectrum" cards under
+      src/radar/, which were left untouched).
+    - Scour, Weather Station: unchanged (2 and 1 respectively) - "+1 lab"
+      counts and the "talking with Collins" installation note were both
+      explicitly excluded per the user's clarification (bridge-only counts).
+    - Camera: added as a brand-new SensorType/SENSOR_GROUPS entry (new brown
+      marker icon, expectedCount 1, elementIds still empty pending a real
+      Hex ID) - reuses the same `noData: true` mechanism built for Reference
+      GNSS, since there's no image/video ingestion or display built yet;
+      clicking a camera marker (once one is added) will do nothing rather
+      than open a broken/empty chart popup, exactly like Reference GNSS.
+  Added a general-purpose `noData` mechanism to support both of the above
+  (SensorPlacement.noData, getEntryNoData() helper, ElementIconMarker now
+  takes a noData flag and skips firing the graph-popup event when true) -
+  reusable for any future marker-only sensor, not just these two cases.
+  Verified the whole change set with a full typecheck + production build
+  (`npm run build`), which passed clean.
+
+PROBLEMS & REMEDIATIONS:
+1. Problem: playwrightCapture.ts crashed entirely (uncaught exception,
+   ERR_CERT_COMMON_NAME_INVALID) partway through a run once the reload timer
+   was added.
+   Fix: Root-caused to `void somePage.reload()` only suppressing the
+   no-floating-promises lint rule, not actually handling a rejected promise
+   - an unhandled rejection crashes the whole Node process. Fixed by
+   attaching `.catch((err) => console.error(...))` to each reload call
+   instead of `void`.
+2. Problem: After shortening the reload interval to 1 minute for testing, a
+   602KB output.txt made it hard to find whether a real crash had occurred
+   again.
+   Fix: Used Grep (which handles large files and the UTF-16-from-PowerShell
+   encoding correctly, unlike Read/tail) to search for real crash
+   signatures - found none beyond the already-known-harmless "Incomplete
+   message" MessagePack decode hiccup, which recurred more often simply
+   because the 1-minute interval reconnects the WebSocket far more
+   frequently than the normal 30-minute interval does.
+3. Problem: Needed to confirm whether "Flow Sensor" was meant to be a full
+   rename of the existing `waterVelocity` SensorType or a brand-new,
+   separate sensor - getting this wrong would have meant redoing a
+   meaningful amount of work.
+   Fix: Asked directly before starting; confirmed it's a display-name-only
+   rename of the existing sensor, which contained the blast radius to
+   labels/titles instead of the internal type identifier used throughout
+   sensorIngestion.ts/chartData.ts.
+
+NOTES / OPEN ITEMS CARRIED FORWARD:
+- The temporary `[periodic]` diagnostic console.log statements in
+  sensorIngestion.ts are still present - not yet removed.
+- fetchRealHardwareData()'s `Promise.all` full-fallback issue (see prior
+  entry) is still unfixed.
+- The custom "blank tooltip on a missing GNSS point" component the user was
+  taught (GapAwareTooltipContent) was explicitly deprioritized by the user
+  ("not concerned about the other thing") - not implemented.
+- Camera's `elementIds` array is still empty - needs a real Hex ID (via the
+  Developer Tab) once the physical camera unit is confirmed installed on the
+  bridge, same as every other not-yet-wired sensor slot.
+- Strain Gauge's `elementIds` array still only has 5 of its 8 expected
+  entries configured (SG01-SG05) - SG06-SG08 need real Hex IDs once
+  installed.

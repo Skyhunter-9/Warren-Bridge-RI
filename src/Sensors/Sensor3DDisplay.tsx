@@ -46,7 +46,8 @@ export type SensorType =
   | "waterVelocity"
   | "waveRadar"
   | "scour"
-  | "weather";
+  | "weather"
+  | "camera";
 
 /**
  * A sensor entry with a marker offset - use this instead of a bare Hex ID string when you
@@ -63,6 +64,12 @@ export interface SensorPlacement {
    * (e.g. "Reference GNSS", "North Pier Strain Gauge"). If omitted, getEntryName() below falls
    * back to a generic "<group label> <position>" name, so this is optional to fill in. */
   name?: string;
+  /** Marks this entry as a physical sensor that should still get a 3D marker/icon, but has no
+   * data feeding it (either by design - e.g. Reference GNSS, which never produces its own
+   * readings - or because no ingestion path exists yet - e.g. Camera). Clicking a `noData`
+   * marker does nothing (see ElementIconMarker.onMouseButton below) instead of opening an
+   * empty/broken graph popup. Defaults to false. */
+  noData?: boolean;
 }
 
 /** A bare Hex ID (marker centers on the element) or a SensorPlacement (element + offset). */
@@ -91,6 +98,12 @@ export function getEntryOffset(entry: SensorElementEntry): { x: number; y: numbe
  * name, so it always falls back too. */
 export function getEntryName(entry: SensorElementEntry, fallback: string): string {
   return typeof entry === "string" ? fallback : (entry.name ?? fallback);
+}
+
+/** Whether this entry is marker-only (see SensorPlacement.noData above). A bare Hex ID string
+ * entry has nowhere to store this, so it's always false. */
+export function getEntryNoData(entry: SensorElementEntry): boolean {
+  return typeof entry === "string" ? false : (entry.noData ?? false);
 }
 
 export interface SensorGroup {
@@ -134,7 +147,11 @@ export const SENSOR_GROUPS: SensorGroup[] = [
       { elementId: "0x2000000053b", offset: { x: -6, y: 0, z: 1 }, name: "GNSS 2" },
       { elementId: "0x20000000547", offset: { x: -6, y: 0, z: 1 }, name: "GNSS 3" },
       { elementId: "0x20000000555", offset: { x: -5, y: 0, z: 1 }, name: "GNSS 4" },
-      { elementId: "0x2000000056b", offset: { x: 0, y: 0, z: 1 }, name: "Reference GNSS" },
+      // Reference GNSS doesn't produce its own displacement data (it's the fixed baseline the
+      // other 4 nodes are measured relative to) - noData: true keeps its marker/icon visible
+      // (it's a real physical unit on the bridge) but skips the graph popup on click, and it's
+      // excluded from IoTDashboard.tsx's GNSS node loops (which only cover nodeIndex 0-3).
+      { elementId: "0x2000000056b", offset: { x: 0, y: 0, z: 1 }, name: "Reference GNSS", noData: true },
     ],
   },
   {
@@ -162,7 +179,8 @@ export const SENSOR_GROUPS: SensorGroup[] = [
     label: "Strain Gauge",
     color: "#ffdd00",
     iconUrl: "/icons/sensor-yellow.svg",
-    expectedCount: 9,
+    expectedCount: 8,
+    // TODO: add SG06-SG08's mount element Hex IDs here (Developer Tab) once installed.
     elementIds: [
       { elementId: "0x20000000504", offset: { x: 0, y: 0, z: -4 }, name: "SG01" },
       { elementId: "0x2000000049b", offset: { x: 0, y: 0, z: -4 }, name: "SG02" },
@@ -175,13 +193,13 @@ export const SENSOR_GROUPS: SensorGroup[] = [
     // Co-located with waterLevel[0] - see sensorIngestion.ts's SensorSnapshot.waterLevel and
     // chartData.ts's getSensorSeries(), which pops both readings up together on click.
     type: "waterVelocity",
-    label: "Water Velocity",
+    label: "Flow Sensor",
     color: "#003399",
     iconUrl: "/icons/sensor-darkblue.svg",
     expectedCount: 1,
     // TODO: add this sensor's mount element Hex ID here (Developer Tab).
     elementIds: [
-      { elementId: "0x20000000553", offset: { x: 0, y: -1, z: 1 }, name: "Water Velocity" }
+      { elementId: "0x20000000553", offset: { x: 0, y: -1, z: 1 }, name: "Flow Sensor" }
     ],
   },
   {
@@ -189,13 +207,13 @@ export const SENSOR_GROUPS: SensorGroup[] = [
     // chartData.ts's getSensorSeries(), which pops both readings up together on click. Reuses
     // the color/icon freed up by removing the standalone waterLevel marker group above.
     type: "waveRadar",
-    label: "Wave Radar",
+    label: "Radar Wave Profile",
     color: "#33ccff",
     iconUrl: "/icons/sensor-lightblue.svg",
     expectedCount: 1,
     // TODO: add this sensor's mount element Hex ID here (Developer Tab).
     elementIds: [
-      { elementId: "0x20000000545", offset: { x: 0, y: -2, z: -4.5 }, name: "Wave Radar" }
+      { elementId: "0x20000000545", offset: { x: 0, y: -2, z: -4.5 }, name: "Radar Wave Profile" }
     ],
   },
   {
@@ -222,6 +240,20 @@ export const SENSOR_GROUPS: SensorGroup[] = [
     elementIds: [
       { elementId: "0x20000000533", offset: { x: 0, y: -2, z: 2 }, name: "Weather Station" },
     ],
+  },
+  {
+    // No image/video ingestion or display exists yet - just a 3D marker for the physical
+    // unit's location. Every entry should keep noData: true (see SensorPlacement above) until
+    // an actual camera feed pipeline is built, so clicking the marker doesn't try to open a
+    // broken/empty chart popup.
+    type: "camera",
+    label: "Camera",
+    color: "#795548",
+    iconUrl: "/icons/sensor-brown.svg",
+    expectedCount: 1,
+    // TODO: add this camera's mount element Hex ID here (Developer Tab), e.g.
+    // { elementId: "0x123", name: "Camera 1", noData: true }.
+    elementIds: [],
   },
 ];
 
@@ -309,6 +341,7 @@ export class ElementIconMarker extends Marker {
   public readonly elementId: string;
   public readonly sensorType: SensorType;
   public readonly nodeIndex: number;
+  public readonly noData: boolean;
 
   // worldLocation is a real X/Y/Z point in the iModel's spatial coordinate system, computed
   // by SensorDecorator.loadSensors() from the element's placement/bounding box, plus any
@@ -322,12 +355,14 @@ export class ElementIconMarker extends Marker {
     elementId: string,
     sensorType: SensorType,
     nodeIndex: number,
-    image: HTMLImageElement
+    image: HTMLImageElement,
+    noData: boolean
   ) {
     super(worldLocation, MARKER_SIZE);
     this.elementId = elementId;
     this.sensorType = sensorType;
     this.nodeIndex = nodeIndex;
+    this.noData = noData;
     this.setImage(image);
     this.title = `${SENSOR_GROUPS.find((g) => g.type === sensorType)?.label ?? sensorType} - ${elementId}`; // Tooltip shown on hover.
   }
@@ -338,7 +373,10 @@ export class ElementIconMarker extends Marker {
   // accidentally trigger it. Returning true tells the viewer this marker "handled" the
   // event, so it doesn't also fall through to the default element-selection tool.
   public override onMouseButton(ev: BeButtonEvent): boolean {
-    if (ev.button === BeButton.Data && !ev.isDown) {
+    // noData markers (e.g. Reference GNSS, Camera) have no chart to show - see
+    // SensorPlacement.noData above. Still return true so the click doesn't fall through to
+    // the default element-selection tool; it just does nothing instead of opening a popup.
+    if (ev.button === BeButton.Data && !ev.isDown && !this.noData) {
       requestSensorGraph({ sensorType: this.sensorType, nodeIndex: this.nodeIndex, elementId: this.elementId });
     }
     return true;
@@ -393,7 +431,7 @@ export class SensorDecorator implements Decorator {
             location.x += offset.x;
             location.y += offset.y;
             location.z += offset.z;
-            markers.push(new ElementIconMarker(location, elementId, group.type, nodeIndex, image));
+            markers.push(new ElementIconMarker(location, elementId, group.type, nodeIndex, image, getEntryNoData(entry)));
           }
         } catch (error) {
           // eslint-disable-next-line no-console

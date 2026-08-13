@@ -126,7 +126,7 @@ export function getSensorSeries(sensorType: SensorType, nodeIndex: number): Sens
       // series. Paired with waterLevel[0] - see waterLevelSeries above.
       return [
         {
-          title: "Water Velocity Sensor",
+          title: "Flow Sensor",
           unit: "mph",
           lines: [{ dataKey: "waterVelocity", name: "Velocity", color: "#fa8c16" }],
         },
@@ -137,7 +137,7 @@ export function getSensorSeries(sensorType: SensorType, nodeIndex: number): Sens
       // series. Paired with waterLevel[1] - see waterLevelSeries above.
       return [
         {
-          title: "Wave Radar Sensor",
+          title: "Radar Wave Profile",
           unit: "in",
           lines: [{ dataKey: "waveHeight", name: "Wave Height", color: "#00b8d9" }],
         },
@@ -180,5 +180,10 @@ export function getSensorSeries(sensorType: SensorType, nodeIndex: number): Sens
           lines: [{ dataKey: "heatIndex", name: "Heat Index", color: "#eb2f96" }],
         },
       ];
+    case "camera":
+      // No image/video ingestion exists yet (see Sensor3DDisplay.tsx's camera SENSOR_GROUPS
+      // entry) - every camera marker is noData: true, so this never actually gets called from
+      // the popup, but the switch still needs a case to stay exhaustive over SensorType.
+      return [];
   }
 }
