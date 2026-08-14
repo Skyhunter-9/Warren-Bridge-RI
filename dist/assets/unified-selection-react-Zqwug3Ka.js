@@ -1,0 +1,1 @@
+import{j as r,r as e}from"./index-zvaH9Kfq.js";const t=e.createContext(void 0);function x(n){const{children:o,...i}=n;return r.jsx(t.Provider,{value:i,children:o})}function s(){return e.useContext(t)}export{x as UnifiedSelectionContextProvider,s as useUnifiedSelectionContext};

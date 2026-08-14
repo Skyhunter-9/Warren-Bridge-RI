@@ -127,20 +127,47 @@ below instead of splitting it back out:
   and renders the clicked sensor's live chart in a floating overlay — mounted once in `App.tsx` as
   a sibling of `<Viewer>` (not one of the AppUI tabs), so it can appear regardless of which side tab
   is currently open.
-- **`chartData.ts`** — the IoT Dashboard tab's chart data-shaping, shared with the 3D popup above.
-  `buildChartData()` flattens nested `SensorSnapshot`s into flat `acc_0_X`/`gnss_1_E`/`sg_3`-style
-  keys for Recharts; `getSensorSeries(sensorType, nodeIndex)` maps a specific sensor (by type + its
-  0-based index within that type's `elementIds` array) to the chart series it corresponds to — this
-  is the link between a clicked marker and the chart it opens; `mergeChartRows()` combines the live
-  buffer with periodic-sourced rows for Periodic-mode sensor types.
+- **`chartData.ts`** — the shared chart *data* layer: both `IoTDashboard.tsx` and
+  `Sensor3DDisplay.tsx`'s `SensorGraphPopup` call into this file rather than each computing a
+  sensor's chart data their own way, which is what used to let the two silently drift apart
+  (see `SensorLineChart.tsx` below for the matching *rendering* half of this). `buildChartData()`
+  flattens nested `SensorSnapshot`s into flat `acc_0_X`/`gnss_1_E`/`sg_3`-style keys for Recharts.
+  `getSensorSeries(sensorType, nodeIndex)` maps a specific sensor (by type + its 0-based index
+  within that type's `elementIds` array) to the chart series (title/unit/lines, with dataKey/name/
+  color per line) it corresponds to — this is simultaneously the link between a clicked marker and
+  the chart it opens, *and* (via `SensorLineChart.tsx`) the line definitions IoTDashboard.tsx's
+  per-node exploded cards use, so e.g. "GNSS Node 1"'s line colors are defined in exactly one
+  place. `mergeChartRows()` combines several row arrays (live + periodic) into one, sorted by
+  timestamp. `getLookbackCutoff(timeframe)` converts an `IoTDashboard.tsx` timeframe-dropdown
+  string ("last 1 Hour", "all time", ...) into an epoch-ms cutoff.
+  `getMergedSensorChartData(types, cutoffTimestamp)` is THE single source of truth for what data a
+  chart covering these types, from this point in time onward, should show — it decides whether to
+  include the live 1Hz buffer at all (skipped entirely when every requested type is Periodic-mode,
+  since that buffer always has *some* value for every field, real or fabricated/zero-filled, which
+  would otherwise flood real periodic readings with meaningless noise — this exact bug used to
+  make the 3D popup show fake data spliced onto the end of real GNSS history, since it had its own
+  separate, incomplete copy of this rule).
+- **`SensorLineChart.tsx`** — the shared chart *rendering* layer: one `<LineChart>` component
+  (title/dropdown/card chrome stays with the caller; this just draws the axes/grid/lines) used by
+  both `IoTDashboard.tsx`'s per-node/per-sensor exploded cards and `SensorGraphPopup`'s per-series
+  mini-charts, taking `data` (from `getMergedSensorChartData`) and `lines` (from
+  `getSensorSeries(...).lines`) as props. Together with the two functions above, a given sensor's
+  chart — data, line colors, and rendering — is defined in exactly one place and referenced from
+  both UI surfaces, rather than two hand-copied implementations that only looked similar. Combined
+  "all nodes at once" charts (the Accel/Strain/Geophone overview cards, the 3 Combined GNSS
+  charts, River Bed Levels, Structural Pier Scour) have no marker-click equivalent — a click only
+  ever shows one sensor's own data — so those stay hand-rolled in `IoTDashboard.tsx` rather than
+  going through `getSensorSeries`.
 - **`SensorInspectorTab.tsx`** — the "Sensor Station Registry" side-tab content: independently
   re-resolves every `SENSOR_GROUPS` Hex ID's world coordinates (via the same `resolveSensorPosition`
   `Sensor3DDisplay.tsx` uses) so you can see exactly where the app thinks each sensor is, grouped by
   type with a configured/expected count, and click one to fly the camera to it.
 
 `IoTDashboard.tsx` (in `src/components/`, rendered inside the "IoT Dashboard" tab) mirrors the
-`sensorIngestion.ts` buffer rather than polling itself, and reuses `buildChartData`/the same
-field-naming convention as the 3D popup so both stay in sync.
+`sensorIngestion.ts` buffer rather than polling itself, and reuses `chartData.ts`/`SensorLineChart.tsx`
+(the same data + rendering layers `SensorGraphPopup` uses) so both stay in sync — editing a
+sensor's line colors or its live/periodic data-merge rule in `chartData.ts` changes it in both
+places at once, instead of needing the same edit made twice.
 
 ### Wave radar display (`src/radar/radarprocessing/`, `src/radar/radargraph/`)
 

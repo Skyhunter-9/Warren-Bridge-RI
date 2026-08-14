@@ -26,9 +26,9 @@ import {
 import { BeEvent } from "@itwin/core-bentley";
 import { Point2d, Point3d, XYAndZ } from "@itwin/core-geometry";
 import { Placement3d, Placement3dProps } from "@itwin/core-common";
-import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { buildChartData, getSensorSeries, mergeChartRows } from "./chartData";
-import { getPeriodicHistory, getSnapshots, onPeriodicHistoryChanged, onSnapshotsChanged, SENSOR_INGESTION } from "./sensorIngestion";
+import { getMergedSensorChartData, getSensorSeries } from "./chartData";
+import { onPeriodicHistoryChanged, onSnapshotsChanged, SENSOR_INGESTION } from "./sensorIngestion";
+import { SensorLineChart } from "./SensorLineChart";
 
 // iTwin.js's spatial coordinate system is always in meters (a BIS/iModel standard, not
 // something this app can change) - shared by the offset conversion below and by
@@ -500,17 +500,20 @@ export function SensorGraphPopup() {
     [request]
   );
 
-  // Only the most recent 45 points (~45 seconds), matching the "Real time" default window
-  // used elsewhere in IoTDashboard.tsx - plus, if this sensor type is in Periodic mode (see
-  // sensorIngestion.ts), every fetched periodic row too, since that data never lands in the
-  // live 1Hz buffer at all and would otherwise never show up here.
-  // `tick` isn't read inside the callback - getSnapshots()/getPeriodicHistory() read external
-  // mutable state - but it's what should trigger a recompute (a live poll or periodic fetch),
-  // so it's deliberately kept as a dep despite the lint rule not being able to see that.
+  // Computed via the exact same shared function IoTDashboard.tsx's charts use (see
+  // getMergedSensorChartData in chartData.ts) - this is what keeps the popup and the IoT tab
+  // from showing two different pictures of the same sensor. Periodic-mode types (e.g. GNSS)
+  // get their full history (cutoff 0 = "all time"), since that's the whole point of clicking
+  // a marker - see its data; everything else gets the same ~45-second "Real time" window used
+  // everywhere else in this app by default.
+  // `tick` isn't read inside the callback - getMergedSensorChartData() reads external mutable
+  // state - but it's what should trigger a recompute (a live poll or periodic fetch), so it's
+  // deliberately kept as a dep despite the lint rule not being able to see that.
   const chartData = useMemo(() => {
-    const liveRows = buildChartData(getSnapshots()).slice(-45);
-    if (!request || SENSOR_INGESTION[request.sensorType].mode !== "Periodic") return liveRows;
-    return mergeChartRows(liveRows, getPeriodicHistory(request.sensorType));
+    if (!request) return [];
+    const isPeriodicOnly = SENSOR_INGESTION[request.sensorType].mode === "Periodic";
+    const cutoff = isPeriodicOnly ? 0 : Date.now() - 45 * 1000;
+    return getMergedSensorChartData([request.sensorType], cutoff);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request, tick]);
 
@@ -578,28 +581,8 @@ export function SensorGraphPopup() {
           <div key={series.title} style={{ marginBottom: "16px" }}>
             <h3 style={{ margin: "0 0 2px 0", fontSize: "14px", color: "#005A9C" }}>{series.title}</h3>
             <span style={{ fontSize: "11px", opacity: 0.6 }}>{series.unit}</span>
-            <div style={{ width: "100%", height: "180px", marginTop: "4px" }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#edf2f7" />
-                  <XAxis dataKey="time" stroke="#718096" style={{ fontSize: "9px" }} />
-                  <YAxis stroke="#718096" style={{ fontSize: "9px" }} domain={["auto", "auto"]} />
-                  <Tooltip wrapperStyle={{ zIndex: 10001 }} />
-                  <Legend iconType="plainline" wrapperStyle={{ fontSize: "10px", paddingTop: "4px" }} />
-                  {series.lines.map((line) => (
-                    <Line
-                      key={line.dataKey}
-                      name={line.name}
-                      type="monotone"
-                      dataKey={line.dataKey}
-                      stroke={line.color}
-                      strokeWidth={1.5}
-                      dot={false}
-                      isAnimationActive={false}
-                    />
-                  ))}
-                </LineChart>
-              </ResponsiveContainer>
+            <div style={{ marginTop: "4px" }}>
+              <SensorLineChart data={chartData} lines={series.lines} showLegend tooltipZIndex={10001} />
             </div>
           </div>
         ))}

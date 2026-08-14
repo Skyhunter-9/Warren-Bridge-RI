@@ -8,27 +8,34 @@
 //      (The buffer is shared - not owned by this component - so a sensor marker's popup
 //      chart, Sensor3DDisplay.tsx's SensorGraphPopup, still has live data even if this tab
 //      is never opened.)
-//   2. `chartData` (useMemo) flattens each SensorSnapshot into one flat object per point,
-//      because Recharts' <Line dataKey="..."> needs flat keys like `acc_0_X`, not nested
-//      arrays/objects - via the same buildChartData() used by Sensor3DDisplay.tsx's popup.
-//   3. `getFilteredChartData(timeframe)` slices that flat array down to whatever time
-//      window the user picked in a chart's dropdown.
-// Edit sensorIngestion.ts to change what data is generated/fetched; edit this file to change
-// how it's charted/laid out.
+//   2. `getMergedChartData(timeframe, types)` (a thin local wrapper) calls chartData.ts's
+//      getMergedSensorChartData() - THE single source of truth for combining the live buffer
+//      with any Periodic-mode sensor types' batched history, filtered to whatever timeframe
+//      the user picked. Sensor3DDisplay.tsx's SensorGraphPopup calls that same shared function
+//      directly, so the IoT tab and the 3D marker popup never compute a sensor's data two
+//      different ways.
+//   3. Each chart's actual <LineChart> is drawn by SensorLineChart.tsx (shared with the
+//      popup); the line definitions (dataKey/name/color) for any per-node/per-sensor card that
+//      has a marker-click equivalent come from chartData.ts's getSensorSeries() - also shared
+//      with the popup - so e.g. "GNSS Node 1"'s chart is defined in exactly one place whether
+//      you're looking at it here or by clicking its marker in the 3D view.
+// Edit sensorIngestion.ts to change what data is generated/fetched; edit chartData.ts to
+// change a sensor's chart *definition* (colors/lines/data merging - changes both this tab and
+// the 3D popup); edit this file to change layout/titles/which timeframe dropdown a card uses.
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import SensorService, {
   getLatestPeriodicRow,
-  getPeriodicHistory,
   getSnapshots,
   onPeriodicHistoryChanged,
   onSnapshotsChanged,
   replaceSnapshots,
   SENSOR_INGESTION,
 } from '../Sensors/sensorIngestion';
-import { buildChartData, mergeChartRows } from '../Sensors/chartData';
+import { getLookbackCutoff, getMergedSensorChartData, getSensorSeries } from '../Sensors/chartData';
 import { SensorType } from '../Sensors/Sensor3DDisplay';
+import { SensorLineChart } from '../Sensors/SensorLineChart';
 import { RadarWaveWidget } from '../radar/radargraph/RadarWaveWidget';
 
 // ============================================================================
@@ -149,65 +156,14 @@ export const IoTDashboard: React.FC = () => {
   const [humidityTimeframe, setHumidityTimeframe] = useState('Real time');
   const [heatIndexTimeframe, setHeatIndexTimeframe] = useState('Real time');
 
-  // Converts timeframe strings to a standard lookback boundary in milliseconds
-  const getLookbackCutoff = (timeframe: string): number => {
-    const now = Date.now();
-    switch (timeframe) {
-      case 'Last 5 Minutes': return now - 5 * 60 * 1000;
-      case 'last 1 Hour': return now - 60 * 60 * 1000;
-      case 'last 3 Hours': return now - 3 * 60 * 60 * 1000;
-      case 'last 24 Hours': return now - 24 * 60 * 60 * 1000;
-      case 'last 7 Days': return now - 7 * 24 * 60 * 60 * 1000;
-      case 'last 30 Days': return now - 30 * 24 * 60 * 60 * 1000;
-      case 'last 1 Year': return now - 365 * 24 * 60 * 60 * 1000;
-      case 'all time': return 0; // epoch start - every real timestamp is >= this
-      case 'Real time':
-      default:
-        return now - 45 * 1000; // Default view window of 45 seconds
-    }
-  };
-
-    // Helper to slice chartData based on selected dropdown time windows
-  const getFilteredChartData = (timeframe: string) => {
-    if (!chartData || chartData.length === 0) return [];
-    if (timeframe === 'Real time') return chartData.slice(-45); // last 45 seconds/points
-
-    const cutoffTime = getLookbackCutoff(timeframe);
-    const now = Date.now();
-    const secondsOfHistory = Math.floor((now - cutoffTime) / 1000);
-
-    // Slices the array from the tail end based on required seconds of history
-    // NOTE: this assumes exactly one chartData point per second (true today, since the
-    // polling interval above is 1000ms) - if that interval ever changes, this slice count
-    // needs to scale with it too.
-    return chartData.slice(-secondsOfHistory);
-  };
-
-  // Merges the live buffer with any Periodic-mode sensor types' batched history (see
-  // sensorIngestion.ts) into one Recharts-ready array, filtered to the same lookback window as
-  // the live-only path above. Types still in API mode contribute nothing extra here (their
-  // data is already in `chartData`/getFilteredChartData), so this is a safe drop-in
-  // replacement for getFilteredChartData on any card that might include a Periodic-mode line.
-  //
-  // IMPORTANT: the live 1Hz snapshot buffer always contains a value for every SensorSnapshot
-  // field, every second, even for Periodic-mode types - SensorService.getLatestSnapshot()
-  // can't leave a field empty (SIMULATED mode fabricates it, REAL mode zero-fills it when the
-  // live vendor call is skipped). If a card's types are ALL Periodic-mode, we must skip the
-  // live buffer entirely here - otherwise real hourly readings get flooded with meaningless
-  // per-second noise from that fallback value, which is what caused GNSS charts to visibly
-  // "tick" every second instead of only updating once real data actually arrives.
-  const getMergedChartData = (timeframe: string, types: SensorType[]) => {
-    const periodicTypes = types.filter((t) => SENSOR_INGESTION[t].mode === "Periodic");
-    if (periodicTypes.length === 0) return getFilteredChartData(timeframe);
-
-    const cutoff = getLookbackCutoff(timeframe);
-    const periodicRows = periodicTypes.flatMap((t) => getPeriodicHistory(t).filter((r) => r.timestamp >= cutoff));
-
-    const stillHasApiTypes = types.some((t) => SENSOR_INGESTION[t].mode === "API");
-    if (!stillHasApiTypes) return mergeChartRows(periodicRows);
-
-    return mergeChartRows(getFilteredChartData(timeframe), periodicRows);
-  };
+  // Computes chart data for a timeframe + set of sensor types - a thin wrapper around
+  // chartData.ts's getMergedSensorChartData (also used by Sensor3DDisplay.tsx's
+  // SensorGraphPopup), which is the actual single source of truth for how live and
+  // Periodic-mode data get combined. Keeping this wrapper (instead of updating every call
+  // site below to call getLookbackCutoff/getMergedSensorChartData directly) just avoids
+  // touching ~20 call sites - the real merge logic itself lives in exactly one place now.
+  const getMergedChartData = (timeframe: string, types: SensorType[]) =>
+    getMergedSensorChartData(types, getLookbackCutoff(timeframe));
 
   // Reads a sensor type's most recently fetched periodic value for `key` (falling back to the
   // live snapshot's value if that type is in API mode, or if no periodic batch has landed yet) -
@@ -275,13 +231,6 @@ export const IoTDashboard: React.FC = () => {
     }
   }, [accelTimeframe, geophoneTimeframe, strainTimeframe, hydroTimeframe, gnssTimeframe, runoffTimeframe, scourTimeframe, waveTimeframe, weatherTimeframe, windSpeedTimeframe, tempTimeframe, pressureTimeframe, humidityTimeframe, heatIndexTimeframe]);
 
-
-  // Flattens each nested SensorSnapshot into one object per data point with keys like
-  // `acc_3_Y` or `gnss_1_E`, matching the dataKey props used by the <Line> charts below.
-  // Recomputed only when `data` changes (useMemo), since this runs once per new point but
-  // is read by every chart on every render. Shared with Sensor3DDisplay.tsx's SensorGraphPopup
-  // so both read off the exact same field names.
-  const chartData = useMemo(() => buildChartData(data), [data]);
 
   const latest = data[data.length - 1];
   // Cycled through (via `colors[i % colors.length]`) to give each of the 10 accelerometer/
@@ -534,21 +483,18 @@ export const IoTDashboard: React.FC = () => {
           <div style={{ marginBottom: '12px', fontWeight: 'bold', color: '#005A9C' }}>ℹ️ Exploded View Grid.</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
             
+            {/* Line definitions (dataKey/name/color) come from chartData.ts's getSensorSeries()
+                - the exact same function Sensor3DDisplay.tsx's marker-click popup uses for
+                these same sensors - so this card and that popup are drawing from one shared
+                definition, not two hand-copied ones. getSensorSeries("accelerometer", i)
+                returns a 2-element array: [0] is this node's accelerometer series, [1] is its
+                co-located geophone series (see chartData.ts's geophoneSeries()) - the
+                'geophone' section below uses [1] the same way. */}
             {expandedSection === 'accel' && Array.from({ length: 10 }).map((_, i) => (
               <div key={i} style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
                 <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🔊 Accel Node {i + 1} (in/s²) {accelMode && <span style={modeBadgeStyle}>{accelMode}</span>}</h5>
                  <ChartTimeframeDropdown value={accelTimeframe} onChange={setAccelTimeframe} />
-                  <div style={{ width: '100%', height: '180px',}}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={getMergedChartData(accelTimeframe, ['accelerometer'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
-                      <Line name="X-Axis" type="monotone" dataKey={`acc_${i}_X`} stroke="#ff4d4f" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                      <Line name="Y-Axis" type="monotone" dataKey={`acc_${i}_Y`} stroke="#faad14" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                      <Line name="Z-Axis" type="monotone" dataKey={`acc_${i}_Z`} stroke="#1890ff" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
+                <SensorLineChart data={getMergedChartData(accelTimeframe, ['accelerometer'])} lines={getSensorSeries('accelerometer', i)[0].lines} />
               </div>
             ))}
 
@@ -556,17 +502,7 @@ export const IoTDashboard: React.FC = () => {
               <div key={i} style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
                 <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>📳 Geophone Node {i + 1} (in/s) {accelMode && <span style={modeBadgeStyle}>{accelMode}</span>}</h5>
                  <ChartTimeframeDropdown value={geophoneTimeframe} onChange={setGeophoneTimeframe} />
-                  <div style={{ width: '100%', height: '180px',}}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={getMergedChartData(geophoneTimeframe, ['accelerometer'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
-                      <Line name="X-Axis" type="monotone" dataKey={`geo_${i}_X`} stroke="#ff4d4f" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                      <Line name="Y-Axis" type="monotone" dataKey={`geo_${i}_Y`} stroke="#faad14" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                      <Line name="Z-Axis" type="monotone" dataKey={`geo_${i}_Z`} stroke="#1890ff" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
+                <SensorLineChart data={getMergedChartData(geophoneTimeframe, ['accelerometer'])} lines={getSensorSeries('accelerometer', i)[1].lines} />
               </div>
             ))}
 
@@ -574,15 +510,7 @@ export const IoTDashboard: React.FC = () => {
               <div key={i} style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
                 <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>📐 Gauge Channel {i + 1} (PSI) {strainMode && <span style={modeBadgeStyle}>{strainMode}</span>}</h5>
                 <ChartTimeframeDropdown value={strainTimeframe} onChange={setStrainTimeframe} />
-                  <div style={{ width: '100%', height: '180px',}}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={getMergedChartData(strainTimeframe, ['strainGauge'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
-                      <Line name="Load" type="monotone" dataKey={`sg_${i}`} stroke="#1890ff" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
+                <SensorLineChart data={getMergedChartData(strainTimeframe, ['strainGauge'])} lines={getSensorSeries('strainGauge', i)[0].lines} />
               </div>
             ))}
 
@@ -640,17 +568,7 @@ export const IoTDashboard: React.FC = () => {
                   <div key={i} style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
                     <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🛰️ GNSS Node {i + 1} (in) {gnssMode && <span style={modeBadgeStyle}>{gnssMode}</span>}</h5>
                     <ChartTimeframeDropdown value={gnssTimeframe} onChange={setGnssTimeframe} />
-                      <div style={{ width: '100%', height: '180px',}}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={getMergedChartData(gnssTimeframe, ['gnss'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                          <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
-                          <Line name="E" type="monotone" dataKey={`gnss_${i}_E`} stroke="#52c41a" dot={false} isAnimationActive={false} connectNulls />
-                          <Line name="N" type="monotone" dataKey={`gnss_${i}_N`} stroke="#13c2c2" dot={false} isAnimationActive={false} connectNulls />
-                          <Line name="Z" type="monotone" dataKey={`gnss_${i}_Z`} stroke="#722ed1" dot={false} isAnimationActive={false} connectNulls />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
+                    <SensorLineChart data={getMergedChartData(gnssTimeframe, ['gnss'])} lines={getSensorSeries('gnss', i)[0].lines} />
                   </div>
                 ))}
               </>
@@ -675,15 +593,7 @@ export const IoTDashboard: React.FC = () => {
                 <div style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
                   <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🌊 Flow Sensor - Stream Velocity {runoffMode && <span style={modeBadgeStyle}>{runoffMode}</span>}</h5>
                   <ChartTimeframeDropdown value={runoffTimeframe} onChange={setRunoffTimeframe} />
-                  <div style={{ width: '100%', height: '180px',}}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={getMergedChartData(runoffTimeframe, ['waterVelocity'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                        <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
-                        <Line name="Velocity (mph)" type="monotone" dataKey="waterVelocity" stroke="#fa8c16" strokeWidth={2} dot={false} isAnimationActive={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
+                  <SensorLineChart data={getMergedChartData(runoffTimeframe, ['waterVelocity'])} lines={getSensorSeries('waterVelocity', 0)[0].lines} />
                 </div>
                 <div style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
                   <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🏗 Structural Pier Scour Penetration {scourCardMode && <span style={modeBadgeStyle}>{scourCardMode}</span>}</h5>
@@ -702,16 +612,11 @@ export const IoTDashboard: React.FC = () => {
                 <div style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
                   <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>📡 Radar Wave Profile {waveMode && <span style={modeBadgeStyle}>{waveMode}</span>}</h5>
                   <ChartTimeframeDropdown value={waveTimeframe} onChange={setWaveTimeframe} />
-                  <div style={{ width: '100%', height: '180px',}}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={getMergedChartData(waveTimeframe, ['waveRadar'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                        <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
-                        <Line name="Wave Height (in)" type="monotone" dataKey="waveHeight" stroke="#00b8d9" strokeWidth={2} dot={false} isAnimationActive={false} />
-                        <Line name="WL 2 (in)" type="monotone" dataKey="waterLevel_2" stroke="#1890ff" dot={false} isAnimationActive={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
+                  {/* Shows both of getSensorSeries("waveRadar", 0)'s series (wave height + its
+                      co-located water level reading) combined on one chart - the popup shows
+                      these as two separate mini-charts instead, but the lines themselves are
+                      the same shared definitions either way. */}
+                  <SensorLineChart data={getMergedChartData(waveTimeframe, ['waveRadar'])} lines={getSensorSeries('waveRadar', 0).flatMap((s) => s.lines)} />
                 </div>
               </>
             )}
@@ -721,67 +626,30 @@ export const IoTDashboard: React.FC = () => {
                 <div style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
                   <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>💨 Wind Speed {weatherMode && <span style={modeBadgeStyle}>{weatherMode}</span>}</h5>
                   <ChartTimeframeDropdown value={windSpeedTimeframe} onChange={setWindSpeedTimeframe} />
-                  <div style={{ width: '100%', height: '180px',}}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={getMergedChartData(windSpeedTimeframe, ['weather'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                        <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
-                        <Line name="Wind Speed (mph)" type="monotone" dataKey="windSpeed" stroke="#1890ff" strokeWidth={2} dot={false} isAnimationActive={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
+                  {/* getSensorSeries("weather", 0) returns 5 series in a fixed order (Wind
+                      Speed, Air Temp, Pressure, Humidity, Heat Index - see chartData.ts) -
+                      each weather sub-card below picks its own by position. */}
+                  <SensorLineChart data={getMergedChartData(windSpeedTimeframe, ['weather'])} lines={getSensorSeries('weather', 0)[0].lines} />
                 </div>
                 <div style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
                   <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🌡️ Air Temperature {weatherMode && <span style={modeBadgeStyle}>{weatherMode}</span>}</h5>
                   <ChartTimeframeDropdown value={tempTimeframe} onChange={setTempTimeframe} />
-                  <div style={{ width: '100%', height: '180px',}}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={getMergedChartData(tempTimeframe, ['weather'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                        <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
-                        <Line name="Temp (°F)" type="monotone" dataKey="temp" stroke="#fa541c" strokeWidth={2} dot={false} isAnimationActive={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
+                  <SensorLineChart data={getMergedChartData(tempTimeframe, ['weather'])} lines={getSensorSeries('weather', 0)[1].lines} />
                 </div>
                 <div style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
                   <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🧭 Barometric Pressure {weatherMode && <span style={modeBadgeStyle}>{weatherMode}</span>}</h5>
                   <ChartTimeframeDropdown value={pressureTimeframe} onChange={setPressureTimeframe} />
-                  <div style={{ width: '100%', height: '180px',}}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={getMergedChartData(pressureTimeframe, ['weather'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                        <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
-                        <Line name="Pressure (inHg)" type="monotone" dataKey="pressure" stroke="#722ed1" strokeWidth={2} dot={false} isAnimationActive={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
+                  <SensorLineChart data={getMergedChartData(pressureTimeframe, ['weather'])} lines={getSensorSeries('weather', 0)[2].lines} />
                 </div>
                 <div style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
                   <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>💧 Relative Humidity {weatherMode && <span style={modeBadgeStyle}>{weatherMode}</span>}</h5>
                   <ChartTimeframeDropdown value={humidityTimeframe} onChange={setHumidityTimeframe} />
-                  <div style={{ width: '100%', height: '180px',}}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={getMergedChartData(humidityTimeframe, ['weather'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                        <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
-                        <Line name="Humidity (%)" type="monotone" dataKey="humidity" stroke="#13c2c2" strokeWidth={2} dot={false} isAnimationActive={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
+                  <SensorLineChart data={getMergedChartData(humidityTimeframe, ['weather'])} lines={getSensorSeries('weather', 0)[3].lines} />
                 </div>
                 <div style={{ background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #d9d9d9', position: 'relative' }}>
                   <h5 style={{ margin: '0 0 6px 0', fontSize: '12px' }}>🥵 Heat Index {weatherMode && <span style={modeBadgeStyle}>{weatherMode}</span>}</h5>
                   <ChartTimeframeDropdown value={heatIndexTimeframe} onChange={setHeatIndexTimeframe} />
-                  <div style={{ width: '100%', height: '180px',}}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={getMergedChartData(heatIndexTimeframe, ['weather'])} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                        <XAxis dataKey="time" style={{ fontSize: '8px' }} /><YAxis style={{ fontSize: '8px' }} domain={['auto', 'auto']} /><Tooltip contentStyle={{ fontSize: '10px' }} />
-                        <Line name="Heat Index (°F)" type="monotone" dataKey="heatIndex" stroke="#eb2f96" strokeWidth={2} dot={false} isAnimationActive={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
+                  <SensorLineChart data={getMergedChartData(heatIndexTimeframe, ['weather'])} lines={getSensorSeries('weather', 0)[4].lines} />
                 </div>
               </>
             )}

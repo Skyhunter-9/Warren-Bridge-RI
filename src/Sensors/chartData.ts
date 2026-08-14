@@ -1,4 +1,4 @@
-import { SensorSnapshot } from "./sensorIngestion";
+import { getPeriodicHistory, getSnapshots, SENSOR_INGESTION, SensorSnapshot } from "./sensorIngestion";
 import { SensorType } from "./Sensor3DDisplay";
 
 /**
@@ -36,6 +36,56 @@ export function buildChartData(snapshots: readonly SensorSnapshot[]) {
  */
 export function mergeChartRows(...rowGroups: Array<ReadonlyArray<Record<string, any>>>): Record<string, any>[] {
   return rowGroups.flat().sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+}
+
+/** Converts a ChartTimeframeDropdown selection (IoTDashboard.tsx) into a lookback boundary in
+ * epoch ms - shared so IoTDashboard.tsx and getMergedSensorChartData below always agree on what
+ * e.g. "last 1 Hour" actually means. 0 ("all time") works as a cutoff because every real
+ * timestamp is >= the Unix epoch. */
+export function getLookbackCutoff(timeframe: string): number {
+  const now = Date.now();
+  switch (timeframe) {
+    case "Last 5 Minutes": return now - 5 * 60 * 1000;
+    case "last 1 Hour": return now - 60 * 60 * 1000;
+    case "last 3 Hours": return now - 3 * 60 * 60 * 1000;
+    case "last 24 Hours": return now - 24 * 60 * 60 * 1000;
+    case "last 7 Days": return now - 7 * 24 * 60 * 60 * 1000;
+    case "last 30 Days": return now - 30 * 24 * 60 * 60 * 1000;
+    case "last 1 Year": return now - 365 * 24 * 60 * 60 * 1000;
+    case "all time": return 0;
+    case "Real time":
+    default:
+      return now - 45 * 1000;
+  }
+}
+
+/**
+ * THE single source of truth for "what data should a chart covering these sensor types, from
+ * this point in time onward, actually show." Both IoTDashboard.tsx's charts and
+ * Sensor3DDisplay.tsx's SensorGraphPopup (the 3D marker click popup) call this - neither one
+ * has its own separate copy of this decision anymore, which is what keeps them from silently
+ * drifting apart the way they used to (see the IMPORTANT note below for the specific bug this
+ * fixed: the popup used to always splice in the last 45 seconds of live data, even for
+ * Periodic-mode types like GNSS that have no real live feed at all, which tacked
+ * fabricated/fallback values onto the end of real periodic history).
+ *
+ * IMPORTANT: the live 1Hz snapshot buffer (sensorIngestion.ts's getSnapshots()) always
+ * contains a value for every SensorSnapshot field, every second, even for Periodic-mode types -
+ * SensorService.getLatestSnapshot() can't leave a field empty (SIMULATED mode fabricates it,
+ * REAL mode zero-fills it when the live vendor call is skipped for that type). So if every
+ * requested type is Periodic-mode, the live buffer must be skipped entirely here, or real
+ * periodic readings get flooded with meaningless noise from that fallback value.
+ */
+export function getMergedSensorChartData(types: SensorType[], cutoffTimestamp: number): Record<string, any>[] {
+  const periodicTypes = types.filter((t) => SENSOR_INGESTION[t].mode === "Periodic");
+  const periodicRows = periodicTypes.flatMap((t) => getPeriodicHistory(t).filter((r) => r.timestamp >= cutoffTimestamp));
+
+  const apiTypes = types.filter((t) => SENSOR_INGESTION[t].mode === "API");
+  if (periodicTypes.length > 0 && apiTypes.length === 0) return mergeChartRows(periodicRows);
+
+  const liveRows = buildChartData(getSnapshots()).filter((r) => r.timestamp >= cutoffTimestamp);
+  if (periodicTypes.length === 0) return liveRows;
+  return mergeChartRows(liveRows, periodicRows);
 }
 
 export interface SensorSeriesLine {

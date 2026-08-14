@@ -346,6 +346,7 @@ export interface PeriodicIngestionSettings {
 
 export type IngestionSettings = ApiIngestionSettings | PeriodicIngestionSettings;
 
+// This sets the default for how often data is fetched and refreshed
 export const DEFAULT_PERIODIC_POLL_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
 /**
@@ -358,7 +359,7 @@ export const SENSOR_INGESTION: Record<SensorType, IngestionSettings> = {
   // it back out as CSV-formatted text on localhost:4000. Must be running (npx tsx
   // src/scratch/playwrightCapture.ts) for this to have anything to fetch. GeoCloud only
   // actually updates this data once an hour, hence the matching pollIntervalMs below.
-  gnss: { mode: "Periodic", url: "http://localhost:4000", pollIntervalMs: 60 * 60 * 1000 },
+  gnss: { mode: "Periodic", url: "http://localhost:4000", pollIntervalMs: 5 * 60 * 1000 }, // sets 5 min refresh
   accelerometer: { mode: "API" },
   strainGauge: { mode: "API" },
   waterVelocity: { mode: "API" },

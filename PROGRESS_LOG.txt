@@ -441,3 +441,93 @@ NOTES / OPEN ITEMS CARRIED FORWARD:
 - Strain Gauge's `elementIds` array still only has 5 of its 8 expected
   entries configured (SG01-SG05) - SG06-SG08 need real Hex IDs once
   installed.
+
+================================================================================
+DATE: 2026-08-13
+================================================================================
+
+PROGRESS MADE:
+- Unified the previously-separate chart implementations in IoTDashboard.tsx
+  (the IoT Dashboard tab) and Sensor3DDisplay.tsx's SensorGraphPopup (the 3D
+  marker click popup), per explicit request - the two used to each have
+  their own hand-written copy of both the chart-data-merging logic and the
+  actual <LineChart> JSX for the same sensors, which had already drifted
+  apart (see the bug below) and would keep drifting with any future edit
+  made to only one side.
+- Added two new shared pieces in chartData.ts: getLookbackCutoff(timeframe)
+  (moved out of IoTDashboard.tsx) and getMergedSensorChartData(types,
+  cutoffTimestamp) - now THE single function that decides how to combine
+  the live 1Hz buffer with Periodic-mode sensor types' batched history.
+  Both IoTDashboard.tsx and SensorGraphPopup call this same function
+  instead of each having their own version of the decision.
+- Added a new shared rendering component, src/Sensors/SensorLineChart.tsx -
+  one <LineChart> body (axes/grid/tooltip/lines) taking `data` and `lines`
+  as props, used by both IoTDashboard.tsx's per-node exploded cards and
+  SensorGraphPopup's per-series mini-charts, replacing ~15 separate
+  hand-copied <ResponsiveContainer><LineChart>...</LineChart></...> blocks
+  across the two files with one shared implementation.
+- Converted every IoTDashboard.tsx chart that has a direct marker-click
+  equivalent (Accel Node i, Geophone Node i, Gauge Channel i, GNSS Node i,
+  the 5 Weather sub-cards, Flow Sensor, Radar Wave Profile) to pull its line
+  definitions (dataKey/name/color) from chartData.ts's getSensorSeries() -
+  the exact same function the popup already used - instead of hand-writing
+  its own (previously-matching-by-coincidence-and-careful-copying) <Line>
+  elements. Left the "combined, all nodes at once" overview/summary cards
+  (Accel Array, Strain Matrix, Geophone Array, the 3 Combined GNSS charts,
+  River Bed Levels, Structural Pier Scour) hand-rolled, since clicking a
+  single marker never shows "all nodes combined" - there's no popup
+  equivalent for those to unify with.
+- Removed now-dead code this refactor made obsolete: IoTDashboard.tsx's
+  local getFilteredChartData/getLookbackCutoff functions (replaced by the
+  chartData.ts versions) and its local `chartData` useMemo (nothing read it
+  anymore once getMergedChartData stopped depending on it).
+- Updated CLAUDE.md's Sensor3DDisplay.tsx/chartData.ts section to document
+  the new shared data (chartData.ts) vs. rendering (SensorLineChart.tsx)
+  split.
+- Verified with a full typecheck + production build (`npm run build`),
+  which passed clean both immediately after the refactor and again after
+  the dead-code cleanup pass.
+
+PROBLEMS & REMEDIATIONS:
+1. Problem (the concrete bug that prompted this refactor): the 3D popup
+   would show fabricated/fake-looking data spliced onto the end of real
+   data for Periodic-mode sensors (e.g. GNSS), while the IoT Dashboard tab
+   never did this for the same sensor.
+   Fix: Root-caused to SensorGraphPopup always including the live 1Hz
+   buffer's last 45 seconds regardless of ingestion mode, while
+   IoTDashboard.tsx's getMergedChartData already had a guard to skip the
+   live buffer entirely when a chart's types were ALL Periodic-mode (since
+   that buffer always has *some* value for every field, real data or not).
+   The popup was simply missing that same guard - its own separate,
+   incomplete copy of the merge logic. Fixed by making the popup call the
+   new shared getMergedSensorChartData(), which has the guard built in, so
+   this class of bug can't recur by construction (there's only one
+   implementation left to get right).
+2. Problem: converting the "Radar Wave Profile" exploded card to pull its
+   line from getSensorSeries() would have silently dropped its second line
+   (the co-located Water Level 2 reading) - getSensorSeries("waveRadar", 0)
+   returns two separate series (wave height, water level), matching how the
+   popup shows them as two separate mini-charts, but the dashboard card
+   always showed both lines combined on one chart.
+   Fix: Caught before finalizing the edit; used
+   getSensorSeries("waveRadar", 0).flatMap(s => s.lines) to combine both
+   series' lines onto the one dashboard chart, preserving the original
+   two-line view while still sourcing both lines from the shared
+   definition (no hand-copied color/dataKey).
+3. Problem: no browser or screenshot tooling is available in this
+   environment, and the app requires OIDC sign-in plus a live 3D iModel
+   session to actually click a marker and see the popup.
+   Fix: None available - verified structurally instead (full typecheck +
+   production build, careful review that the JSX swap preserved styling/
+   props). Explicitly flagged as NOT visually confirmed in a running
+   browser; the user should open the dashboard and click a GNSS marker to
+   confirm the popup and dashboard chart now agree.
+
+NOTES / OPEN ITEMS CARRIED FORWARD:
+- Not yet visually confirmed in an actual running browser session (see
+  Problem 3 above) - next session should check this if not already
+  confirmed by the user.
+- The temporary `[periodic]` diagnostic console.log statements in
+  sensorIngestion.ts are still present - not yet removed.
+- fetchRealHardwareData()'s `Promise.all` full-fallback issue (see earlier
+  entries) is still unfixed.
